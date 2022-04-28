@@ -149,36 +149,10 @@ def run_batch(model, batch_size):
     return states, actions, rewards
 
 
-def select_super_sessions(states, actions, rewards, percentile=90):
-    """
-    Select all the sessions that will survive to the next generation
-    Similar to select_elites function
-    If this function is the bottleneck, it can easily be sped up using numba
-    """
-
-    counter = BATCH_SIZE * (100.0 - percentile) / 100.0
-    reward_threshold = np.percentile(rewards, percentile)
-
-    super_states = []
-    super_actions = []
-    super_rewards = []
-    for i in range(len(states)):
-        if rewards[i] >= reward_threshold - 0.0000001:
-            if (counter > 0) or (rewards[i] >= reward_threshold + 0.0000001):
-                super_states.append(states[i])
-                super_actions.append(actions[i])
-                super_rewards.append(rewards[i])
-                counter -= 1
-    super_states = np.array(super_states, dtype=int)
-    super_actions = np.array(super_actions, dtype=int)
-    super_rewards = np.array(super_rewards)
-    return super_states, super_actions, super_rewards
-
-
 if __name__ == "__main__":
     super_states = np.empty((0, GAME_LENGTH, STATE_SIZE), dtype=int)
     super_actions = np.array([], dtype=int)
-    super_scores = np.array([])
+    super_rewards = np.array([])
 
     myRand = random.randint(0, 1000)  # used in the filename
 
@@ -191,44 +165,29 @@ if __name__ == "__main__":
         states = np.append(states, super_states, axis=0)
         if i > 0:
             actions = np.append(actions, np.array(super_actions), axis=0)
-        rewards = np.append(rewards, super_scores)
+        rewards = np.append(rewards, super_rewards)
 
         # select elites (sessions to learn from)
         elite_indexes = np.argpartition(rewards, -NB_ELITE)[-NB_ELITE:]
         elite_states = np.concatenate(states[elite_indexes])
         elite_actions = np.concatenate(actions[elite_indexes])
 
-
-        super_sessions = select_super_sessions(
-            states, actions, rewards, percentile=SUPER_PERCENTILE
-        )  # pick the sessions to survive
-
-        super_sessions = [
-            (super_sessions[0][i], super_sessions[1][i], super_sessions[2][i])
-            for i in range(len(super_sessions[2]))
-        ]
-        super_sessions.sort(key=lambda super_sessions: super_sessions[2], reverse=True)
-        select3_time = time.time() - tic
-
         model.fit(elite_states, elite_actions)  # learn from the elite sessions
 
-        super_states = [super_sessions[i][0] for i in range(len(super_sessions))]
-        super_actions = [super_sessions[i][1] for i in range(len(super_sessions))]
-        super_scores = [super_sessions[i][2] for i in range(len(super_sessions))]
+        # select super sessions (sessions that will be kept for the next generation)
+        super_indexes = np.argpartition(rewards, -NB_SUPER)[-NB_SUPER:]
+        super_states = states[super_indexes]
+        super_actions = actions[super_indexes]
+        super_rewards = rewards[super_indexes]
 
-        rewards.sort()
-        mean_all_reward = np.mean(rewards[-100:])
-        mean_best_reward = np.mean(super_scores)
+        # evaluate mean reward
+        mean_all_reward = np.mean(rewards)
+        mean_best_reward = np.mean(super_rewards)
 
-        print(
-            "\n"
-            + str(i)
-            + ". Best individuals: "
-            + str(np.flip(np.sort(super_scores)))
-        )
-
-        # uncomment below line to print out how much time each step in this loop takes.
+        print(f"{i}. Best individuals:")
+        print(np.sort(super_rewards)[::-1])
         print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
+        print()
 
         if i % 20 == 1:  # Write all important info to files every 20 iterations
             with open("best_species_pickle_" + str(myRand) + ".txt", "wb") as fp:
@@ -238,7 +197,7 @@ if __name__ == "__main__":
                     f.write(str(item))
                     f.write("\n")
             with open("best_species_rewards_" + str(myRand) + ".txt", "w") as f:
-                for item in super_scores:
+                for item in super_rewards:
                     f.write(str(item))
                     f.write("\n")
             with open("best_100_rewards_" + str(myRand) + ".txt", "a") as f:
