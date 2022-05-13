@@ -1,10 +1,11 @@
 import random
 import time
 
+import networkx as nx
 import numpy as np
 import tensorflow
 
-N = 19
+N = 20
 MYN = int(N * (N - 1) / 2)
 
 # Increase this to make convergence faster, decrease if the algorithm gets stuck in local optima too often.
@@ -35,13 +36,35 @@ model.compile(
 print(model.summary())
 
 
+def make_graph(state):
+    g = nx.Graph()
+    g.add_nodes_from(list(range(N)))
+    count = 0
+    for i in range(N):
+        for j in range(i+1, N):
+            if state[count] == 1:
+                g.add_edge(i, j)
+            count += 1
+
+
 def get_reward(state):
-    g = np.zeros((N, N), dtype=int)
-    k = 0
-    for i in range(N - 1):
-        g[i, i + 1 :] = state[k : k + N - i - 1]
-        k += N - i - 1
-    return -abs(g.sum(axis=-1) - 3).sum()
+    score = -abs(3 - np.sum(state[:MYN]) * 2 / N)
+    if score == 0:
+        print(state)
+        g = make_graph(state)
+        nx.draw_kamada_kawai(g)
+        plt.show()
+        exit()
+    else:
+        return score
+
+
+    # g = np.zeros((N, N), dtype=int)
+    # k = 0
+    # for i in range(N - 1):
+    #     g[i, i + 1 :] = state[k : k + N - i - 1]
+    #     k += N - i - 1
+    # return -abs(g.sum(axis=-1) - 3).sum()
 
 
 def run_batch(model, batch_size, graphs=None):

@@ -29,7 +29,7 @@ import math
 import matplotlib.pyplot as plt
 
 
-N = 19  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
+N = 20  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
 # The length of the word we are generating. Here we are generating a graph, so we create a 0-1 word of length (N choose 2)
 MYN = int(N*(N-1)/2)
 
@@ -76,7 +76,7 @@ model.compile(loss="binary_crossentropy",
 print(model.summary())
 
 
-def calcScore(state):
+def calcScore_conj21(state):
     """
     Calculates the reward for a given word. 
     This function is very slow, it can be massively sped up with numba -- but numba doesn't support networkx yet, which is very convenient to use here
@@ -129,6 +129,12 @@ def calcScore(state):
 
     return myScore
 
+
+def calcScore_avg_deg(state):
+    return -abs(3 - sum(state[:MYN]) * 2 / N)
+
+
+calcScore = calcScore_avg_deg
 
 # No need to change anything below here.
 
@@ -304,22 +310,22 @@ for i in range(1000000):  # 1000000 generations should be plenty
     # uncomment below line to print out how much time each step in this loop takes.
     print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
 
-    if (i % 20 == 1):  # Write all important info to files every 20 iterations
-        with open('best_species_pickle_'+str(myRand)+'.txt', 'wb') as fp:
-            pickle.dump(super_actions, fp)
-        with open('best_species_txt_'+str(myRand)+'.txt', 'w') as f:
-            for item in super_actions:
-                f.write(str(item))
-                f.write("\n")
-        with open('best_species_rewards_'+str(myRand)+'.txt', 'w') as f:
-            for item in super_rewards:
-                f.write(str(item))
-                f.write("\n")
-        with open('best_100_rewards_'+str(myRand)+'.txt', 'a') as f:
-            f.write(str(mean_all_reward)+"\n")
-        with open('best_elite_rewards_'+str(myRand)+'.txt', 'a') as f:
-            f.write(str(mean_best_reward)+"\n")
-    if (i % 200 == 2):  # To create a timeline, like in Figure 3
-        with open('best_species_timeline_txt_'+str(myRand)+'.txt', 'a') as f:
-            f.write(str(super_actions[0]))
-            f.write("\n")
+    # if (i % 20 == 1):  # Write all important info to files every 20 iterations
+    #     with open('best_species_pickle_'+str(myRand)+'.txt', 'wb') as fp:
+    #         pickle.dump(super_actions, fp)
+    #     with open('best_species_txt_'+str(myRand)+'.txt', 'w') as f:
+    #         for item in super_actions:
+    #             f.write(str(item))
+    #             f.write("\n")
+    #     with open('best_species_rewards_'+str(myRand)+'.txt', 'w') as f:
+    #         for item in super_rewards:
+    #             f.write(str(item))
+    #             f.write("\n")
+    #     with open('best_100_rewards_'+str(myRand)+'.txt', 'a') as f:
+    #         f.write(str(mean_all_reward)+"\n")
+    #     with open('best_elite_rewards_'+str(myRand)+'.txt', 'a') as f:
+    #         f.write(str(mean_best_reward)+"\n")
+    # if (i % 200 == 2):  # To create a timeline, like in Figure 3
+    #     with open('best_species_timeline_txt_'+str(myRand)+'.txt', 'a') as f:
+    #         f.write(str(super_actions[0]))
+    #         f.write("\n")

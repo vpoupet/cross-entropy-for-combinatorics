@@ -1,5 +1,4 @@
 import math
-import pickle
 import random
 import time
 
@@ -9,15 +8,15 @@ import numpy as np
 import scipy
 import tensorflow
 
-N = 19  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
+N = 20  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
 # The length of the word we are generating. Here we are generating a graph, so we create a 0-1 word of length (N choose 2)
 MYN = int(N * (N - 1) / 2)
 
 # Increase this to make convergence faster, decrease if the algorithm gets stuck in local optima too often.
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.001
 BATCH_SIZE = 1000  # number of new sessions per iteration
-ELITE_PERCENTILE = 93  # top 100-X percentile we are learning from
-SUPER_PERCENTILE = 94  # top 100-X percentile that survives to next iteration
+ELITE_PERCENTILE = 90  # top 100-X percentile we are learning from
+SUPER_PERCENTILE = 95  # top 100-X percentile that survives to next iteration
 NB_ELITE = int(BATCH_SIZE * (100 - ELITE_PERCENTILE) / 100)
 NB_SUPER = int(BATCH_SIZE * (100 - SUPER_PERCENTILE) / 100)
 
@@ -33,9 +32,9 @@ STATE_SIZE = MYN + N
 # the positions we haven't considered yet), and the next MYN bits one-hot encode which letter we are considering now.
 # So e.g. [0,1,0,0,   0,0,1,0] means we have the partial word 01 and we are considering the third letter now.
 # Is there a better way to format the input to make it easier for the neural network to understand things?
-GAME_LENGTH = MYN
+GAME_LENGTH = 20
 
-INF = 100
+INF = 10000
 
 
 # Model structure: a sequential network with three hidden layers, sigmoid activation in the output.
@@ -59,10 +58,64 @@ print(model.summary())
 
 def nb_components(g):
     laplacian = scipy.sparse.csgraph.laplacian(g)
-    return np.linalg.eigvals(laplacian).count(0)
+    eigen_values = np.linalg.eigvals(laplacian)
+    return len(eigen_values) - np.count_nonzero(eigen_values)
 
 
-def get_reward(state):
+def make_graph(state):
+    g = nx.Graph()
+    g.add_nodes_from(list(range(N)))
+    count = 0
+    for i in range(N):
+        for j in range(i+1, N):
+            if state[count] == 1:
+                g.add_edge(i, j)
+            count += 1
+    return g
+
+
+def make_matrix(state):
+    g_array = np.zeros((N, N), dtype=int)
+    k = 0
+    for i in range(N - 1):
+        g_array[i, i + 1 :] = state[k : k + N - i - 1]
+        k += N - i - 1
+    return g_array
+
+
+def get_reward_avg_deg(state):
+    score = -abs(3 - np.sum(state[:MYN]) * 2 / N)
+    if score == 0:
+        print(state)
+        g = make_graph(state)
+        nx.draw_kamada_kawai(g)
+        plt.show()
+        exit()
+    else:
+        return score
+
+
+def get_reward_tree(state):
+    g = make_matrix(state)
+    if nb_components(g) > 1:
+        return -100
+    return -sum(state[:MYN])
+
+
+def get_reward_deg(state):
+    g = make_matrix(state)
+    return -abs(g.sum(axis=-1) - 3).sum()
+
+
+def get_reward_brouwer(state):
+    t = 10
+    g = make_matrix(state)
+    laplacian = scipy.sparse.csgraph.laplacian(g)
+    eigen_values = np.sort(np.linalg.eigvals(laplacian))
+    return sum(eigen_values[-t:]) - np.count_nonzero(state[:MYN]) - t*(t+1)/2
+
+
+def get_reward_conj21(state):
     """
     Calculates the reward for a given word.
     This function is very slow, it can be massively sped up with numba -- but numba doesn't support networkx yet, which is very convenient to use here
@@ -116,32 +169,34 @@ def get_reward(state):
     return reward
 
 
+get_reward = get_reward_avg_deg
+
 # No need to change anything below here.
 
 
-def run_batch(model, batch_size):
+def run_batch(model, batch_size, graphs=None):
     states = np.zeros((batch_size, GAME_LENGTH, STATE_SIZE), dtype=int)
     actions = np.zeros([batch_size, GAME_LENGTH], dtype=int)
+    if graphs is not None:
+        states[:, 0, :MYN] = np.repeat(graphs, batch_size // graphs.shape[0], axis=0)
+
     prob = np.zeros(batch_size)
     step_i = 0
     step_j = 1
     rewards = np.zeros((batch_size,))
 
     for step in range(GAME_LENGTH):
+        step_i = random.randrange(N)
+        step_j = (step_i + random.randrange(N - 1)) % N
         states[:, step, MYN + step_i] = 1
         states[:, step, MYN + step_j] = 1
-
+        step_k = (step_i * (step_i + 1)) // 2 + step_j
         prob = model.predict(states[:, step, :], batch_size=batch_size)
 
+        if step > 0:
+            states[:, step, :] = states[:, step-1, :]
         actions[:, step] = np.random.random(size=(batch_size,)) < prob[:, 0]
-        states[:, step:, step] = np.repeat(
-            actions[:, step, np.newaxis], GAME_LENGTH - step, axis=1
-        )
-
-        step_j += 1
-        if step_j >= N:
-            step_i += 1
-            step_j = step_i + 1
+        states[:, step, step_k] = actions[:, step]
 
     for i in range(batch_size):
         rewards[i] = get_reward(states[i, GAME_LENGTH - 1, :])
@@ -155,24 +210,33 @@ if __name__ == "__main__":
     super_rewards = np.array([])
 
     myRand = random.randint(0, 1000)  # used in the filename
-
+    
+    best_graphs = np.random.randint(2, size=(BATCH_SIZE, MYN))
     for i in range(1000000):  # 1000000 generations should be plenty
         # generate new sessions
         # performance can be improved with joblib
         tic = time.time()
-        states, actions, rewards = run_batch(model, BATCH_SIZE)
+        states, actions, rewards = run_batch(model, BATCH_SIZE, graphs=best_graphs)
+        if i > 0:
+            states = np.append(states, super_states, axis=0)
+            actions = np.append(actions, super_actions, axis=0)
 
         states = np.append(states, super_states, axis=0)
         if i > 0:
             actions = np.append(actions, np.array(super_actions), axis=0)
         rewards = np.append(rewards, super_rewards)
 
+        # model.fit(
+        #     np.concatenate(states), np.concatenate(actions)
+        # )  # learn from the elite sessions
+
         # select elites (sessions to learn from)
         elite_indexes = np.argpartition(rewards, -NB_ELITE)[-NB_ELITE:]
         elite_states = np.concatenate(states[elite_indexes])
         elite_actions = np.concatenate(actions[elite_indexes])
 
-        model.fit(elite_states, elite_actions)  # learn from the elite sessions
+        model.fit(elite_states, elite_actions)
+        best_graphs = states[elite_indexes, GAME_LENGTH - 1, :MYN]
 
         # select super sessions (sessions that will be kept for the next generation)
         super_indexes = np.argpartition(rewards, -NB_SUPER)[-NB_SUPER:]
@@ -189,22 +253,22 @@ if __name__ == "__main__":
         print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
         print()
 
-        if i % 20 == 1:  # Write all important info to files every 20 iterations
-            with open("best_species_pickle_" + str(myRand) + ".txt", "wb") as fp:
-                pickle.dump(super_actions, fp)
-            with open("best_species_txt_" + str(myRand) + ".txt", "w") as f:
-                for item in super_actions:
-                    f.write(str(item))
-                    f.write("\n")
-            with open("best_species_rewards_" + str(myRand) + ".txt", "w") as f:
-                for item in super_rewards:
-                    f.write(str(item))
-                    f.write("\n")
-            with open("best_100_rewards_" + str(myRand) + ".txt", "a") as f:
-                f.write(str(mean_all_reward) + "\n")
-            with open("best_elite_rewards_" + str(myRand) + ".txt", "a") as f:
-                f.write(str(mean_best_reward) + "\n")
-        if i % 200 == 2:  # To create a timeline, like in Figure 3
-            with open("best_species_timeline_txt_" + str(myRand) + ".txt", "a") as f:
-                f.write(str(super_actions[0]))
-                f.write("\n")
+        # if i % 20 == 1:  # Write all important info to files every 20 iterations
+        #     with open("best_species_pickle_" + str(myRand) + ".txt", "wb") as fp:
+        #         pickle.dump(super_actions, fp)
+        #     with open("best_species_txt_" + str(myRand) + ".txt", "w") as f:
+        #         for item in super_actions:
+        #             f.write(str(item))
+        #             f.write("\n")
+        #     with open("best_species_rewards_" + str(myRand) + ".txt", "w") as f:
+        #         for item in super_rewards:
+        #             f.write(str(item))
+        #             f.write("\n")
+        #     with open("best_100_rewards_" + str(myRand) + ".txt", "a") as f:
+        #         f.write(str(mean_all_reward) + "\n")
+        #     with open("best_elite_rewards_" + str(myRand) + ".txt", "a") as f:
+        #         f.write(str(mean_best_reward) + "\n")
+        # if i % 200 == 2:  # To create a timeline, like in Figure 3
+        #     with open("best_species_timeline_txt_" + str(myRand) + ".txt", "a") as f:
+        #         f.write(str(super_actions[0]))
+        #         f.write("\n")
