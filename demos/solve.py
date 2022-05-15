@@ -5,7 +5,6 @@ import time
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import scipy
 import tensorflow
 
 N = 20  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
@@ -56,9 +55,23 @@ model.compile(
 print(model.summary())
 
 
+def display_graph(state):
+    print(state)
+    nx.draw_kamada_kawai(g)
+    plt.show()
+    exit()
+
+
+def laplacian(g):
+    l = -g
+    for i in range(len(g)):
+        l[i, i] = g[i, :].sum()
+    return l
+
+
 def nb_components(g):
-    laplacian = scipy.sparse.csgraph.laplacian(g)
-    eigen_values = np.linalg.eigvals(laplacian)
+    l = laplacian(g)
+    eigen_values = np.linalg.eigvals(l)
     return len(eigen_values) - np.count_nonzero(eigen_values)
 
 
@@ -67,7 +80,7 @@ def make_graph(state):
     g.add_nodes_from(list(range(N)))
     count = 0
     for i in range(N):
-        for j in range(i+1, N):
+        for j in range(i + 1, N):
             if state[count] == 1:
                 g.add_edge(i, j)
             count += 1
@@ -111,10 +124,13 @@ def get_reward_deg(state):
 def get_reward_brouwer(state):
     t = 10
     g = make_matrix(state)
-    laplacian = scipy.sparse.csgraph.laplacian(g)
-    eigen_values = np.sort(np.linalg.eigvals(laplacian))
-    return sum(eigen_values[-t:]) - np.count_nonzero(state[:MYN]) - t*(t+1)/2
-
+    l = laplacian(g)
+    eigen_values = np.sort(np.linalg.eigvals(l))
+    r = sum(eigen_values[-t:]) - np.count_nonzero(state[:MYN]) - t * (t + 1) / 2
+    if r > 0:
+        display_graph(state)
+        exit()
+    return r
 
 def get_reward_conj21(state):
     """
@@ -195,7 +211,7 @@ def run_batch(model, batch_size, graphs=None):
         prob = model.predict(states[:, step, :], batch_size=batch_size)
 
         if step > 0:
-            states[:, step, :] = states[:, step-1, :]
+            states[:, step, :] = states[:, step - 1, :]
         actions[:, step] = np.random.random(size=(batch_size,)) < prob[:, 0]
         states[:, step, step_k] = actions[:, step]
 
