@@ -7,7 +7,7 @@ import networkx as nx
 import numpy as np
 import tensorflow
 
-N = 25  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
+N = 19  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
 # The length of the word we are generating. Here we are generating a graph, so we create a 0-1 word of length (N choose 2)
 MYN = N * (N - 1) // 2
 
@@ -31,11 +31,10 @@ STATE_SIZE = MYN + N
 # the positions we haven't considered yet), and the next MYN bits one-hot encode which letter we are considering now.
 # So e.g. [0,1,0,0,   0,0,1,0] means we have the partial word 01 and we are considering the third letter now.
 # Is there a better way to format the input to make it easier for the neural network to understand things?
-GAME_LENGTH = 20
+GAME_LENGTH = 10
 
 EPS = 1e-8
 INF = 10000
-
 
 # Model structure: a sequential network with three hidden layers, sigmoid activation in the output.
 # I usually used relu activation in the hidden layers but play around to see what activation function and what optimizer works best.
@@ -54,12 +53,6 @@ model.compile(
 )
 
 print(model.summary())
-
-
-def display_graph(state):
-    print(state)
-    nx.draw_kamada_kawai(make_graph(state))
-    plt.show()
 
 
 def laplacian(g):
@@ -98,11 +91,7 @@ def make_matrix(state):
 
 
 def get_reward_avg_deg(state):
-    score = -abs(3 - np.sum(state[:MYN]) * 2 / N)
-    if score >= 0:
-        display_graph(state)
-    else:
-        return score
+    return -abs(3 - np.sum(state[:MYN]) * 2 / N)
 
 
 def get_reward_tree(state):
@@ -118,15 +107,13 @@ def get_reward_deg(state):
 
 
 def get_reward_brouwer(state):
-    t = 10
+    global best_reward, best_state
+
+    t = 15
     g = make_matrix(state)
     l = laplacian(g)
     eigen_values = np.sort(np.linalg.eigvals(l))
-    r = sum(eigen_values[-t:]) - np.count_nonzero(state[:MYN]) - t * (t + 1) / 2
-    if r > EPS:
-        display_graph(state)
-        exit()
-    return r
+    return sum(eigen_values[-t:]) - np.count_nonzero(state[:MYN]) - t * (t + 1) / 2
 
 
 def get_reward_conj21(state):
@@ -183,7 +170,7 @@ def get_reward_conj21(state):
     return reward
 
 
-get_reward = get_reward_brouwer
+get_reward = get_reward_conj21
 
 # No need to change anything below here.
 
@@ -208,7 +195,7 @@ def run_batch(model, batch_size, graphs=None):
         prob = model.predict(states[:, step, :], batch_size=batch_size)
 
         if step > 0:
-            states[:, step, :] = states[:, step - 1, :]
+            states[:, step, :MYN] = states[:, step - 1, :MYN]
         actions[:, step] = np.random.random(size=(batch_size,)) < prob[:, 0]
         states[:, step, step_k] = actions[:, step]
 
@@ -219,35 +206,49 @@ def run_batch(model, batch_size, graphs=None):
 
 
 if __name__ == "__main__":
-    super_states = np.empty((0, GAME_LENGTH, STATE_SIZE), dtype=int)
-    super_actions = np.array([], dtype=int)
-    super_rewards = np.array([])
+    best_reward = -1
+    best_graph = None
+    start_time = time.time()
+
+    super_states = np.zeros((0, GAME_LENGTH, STATE_SIZE), dtype=int)
+    super_actions = np.zeros((0, GAME_LENGTH), dtype=int)
+    super_rewards = np.zeros((0,))
 
     myRand = random.randint(0, 1000)  # used in the filename
 
     best_graphs = np.random.randint(2, size=(BATCH_SIZE, MYN))
-    for i in range(1000000):  # 1000000 generations should be plenty
+    iteration = 0
+
+    while True:
         # generate new sessions
-        # performance can be improved with joblib
         tic = time.time()
         states, actions, rewards = run_batch(model, BATCH_SIZE, graphs=best_graphs)
-        if i > 0:
-            states = np.append(states, super_states, axis=0)
-            actions = np.append(actions, super_actions, axis=0)
+        states = np.append(states, super_states, axis=0)
+        actions = np.append(actions, super_actions, axis=0)
 
         states = np.append(states, super_states, axis=0)
-        if i > 0:
-            actions = np.append(actions, np.array(super_actions), axis=0)
+        actions = np.append(actions, np.array(super_actions), axis=0)
         rewards = np.append(rewards, super_rewards)
-
-        # model.fit(
-        #     np.concatenate(states), np.concatenate(actions)
-        # )  # learn from the elite sessions
 
         # select elites (sessions to learn from)
         elite_indexes = np.argpartition(rewards, -NB_ELITE)[-NB_ELITE:]
         elite_states = np.concatenate(states[elite_indexes])
         elite_actions = np.concatenate(actions[elite_indexes])
+
+        # Compare best reward of this batch to the overall best reward
+        batch_best_reward_index = np.argmax(rewards)
+        batch_best_reward = rewards[batch_best_reward_index]
+        if batch_best_reward > best_reward:
+            best_reward = batch_best_reward
+            best_graph = states[batch_best_reward_index, GAME_LENGTH - 1, :MYN]
+            with open("results.txt", "a") as f:
+                f.write("".join(str(x) for x in best_graph) + "\n")
+                f.write(f"{best_reward} ({time.time() - start_time})\n\n")
+            if best_reward > EPS:
+                print(best_graph)
+                nx.draw_kamada_kawai(make_graph(best_graph))
+                plt.show()
+                exit()
 
         model.fit(elite_states, elite_actions)
         best_graphs = states[elite_indexes, GAME_LENGTH - 1, :MYN]
@@ -262,10 +263,11 @@ if __name__ == "__main__":
         mean_all_reward = np.mean(rewards)
         mean_best_reward = np.mean(super_rewards)
 
-        print(f"{i}. Best individuals:")
+        print(f"{iteration}. Best individuals:")
         print(np.sort(super_rewards)[::-1])
         print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
         print()
+        iteration += 1
 
     # if i % 20 == 1:  # Write all important info to files every 20 iterations
     #     with open("best_species_pickle_" + str(myRand) + ".txt", "wb") as fp:
@@ -286,15 +288,3 @@ if __name__ == "__main__":
     #     with open("best_species_timeline_txt_" + str(myRand) + ".txt", "a") as f:
     #         f.write(str(super_actions[0]))
     #         f.write("\n")
-
-
-# brouwer_state = [
-#  0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0,
-#  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1,
-#  1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1,
-#  0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0,
-#  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0,
-#  1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
-#  1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-#  1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0,
-#  0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,]
