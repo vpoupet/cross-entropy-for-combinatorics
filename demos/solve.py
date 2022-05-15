@@ -79,6 +79,7 @@ def make_matrix(state):
     k = 0
     for i in range(N - 1):
         g_array[i, i + 1 :] = state[k : k + N - i - 1]
+        g_array[i + 1 :, i] = state[k : k + N - i - 1]
         k += N - i - 1
     return g_array
 
