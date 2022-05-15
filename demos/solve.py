@@ -7,9 +7,9 @@ import networkx as nx
 import numpy as np
 import tensorflow
 
-N = 20  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
+N = 25  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
 # The length of the word we are generating. Here we are generating a graph, so we create a 0-1 word of length (N choose 2)
-MYN = int(N * (N - 1) / 2)
+MYN = N * (N - 1) // 2
 
 # Increase this to make convergence faster, decrease if the algorithm gets stuck in local optima too often.
 LEARNING_RATE = 0.001
@@ -33,6 +33,7 @@ STATE_SIZE = MYN + N
 # Is there a better way to format the input to make it easier for the neural network to understand things?
 GAME_LENGTH = 20
 
+EPS = 1e-8
 INF = 10000
 
 
@@ -57,9 +58,8 @@ print(model.summary())
 
 def display_graph(state):
     print(state)
-    nx.draw_kamada_kawai(g)
+    nx.draw_kamada_kawai(make_graph(state))
     plt.show()
-    exit()
 
 
 def laplacian(g):
@@ -99,12 +99,8 @@ def make_matrix(state):
 
 def get_reward_avg_deg(state):
     score = -abs(3 - np.sum(state[:MYN]) * 2 / N)
-    if score == 0:
-        print(state)
-        g = make_graph(state)
-        nx.draw_kamada_kawai(g)
-        plt.show()
-        exit()
+    if score >= 0:
+        display_graph(state)
     else:
         return score
 
@@ -127,10 +123,11 @@ def get_reward_brouwer(state):
     l = laplacian(g)
     eigen_values = np.sort(np.linalg.eigvals(l))
     r = sum(eigen_values[-t:]) - np.count_nonzero(state[:MYN]) - t * (t + 1) / 2
-    if r > 0:
+    if r > EPS:
         display_graph(state)
         exit()
     return r
+
 
 def get_reward_conj21(state):
     """
@@ -186,7 +183,7 @@ def get_reward_conj21(state):
     return reward
 
 
-get_reward = get_reward_avg_deg
+get_reward = get_reward_brouwer
 
 # No need to change anything below here.
 
@@ -227,7 +224,7 @@ if __name__ == "__main__":
     super_rewards = np.array([])
 
     myRand = random.randint(0, 1000)  # used in the filename
-    
+
     best_graphs = np.random.randint(2, size=(BATCH_SIZE, MYN))
     for i in range(1000000):  # 1000000 generations should be plenty
         # generate new sessions
@@ -270,22 +267,34 @@ if __name__ == "__main__":
         print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
         print()
 
-        # if i % 20 == 1:  # Write all important info to files every 20 iterations
-        #     with open("best_species_pickle_" + str(myRand) + ".txt", "wb") as fp:
-        #         pickle.dump(super_actions, fp)
-        #     with open("best_species_txt_" + str(myRand) + ".txt", "w") as f:
-        #         for item in super_actions:
-        #             f.write(str(item))
-        #             f.write("\n")
-        #     with open("best_species_rewards_" + str(myRand) + ".txt", "w") as f:
-        #         for item in super_rewards:
-        #             f.write(str(item))
-        #             f.write("\n")
-        #     with open("best_100_rewards_" + str(myRand) + ".txt", "a") as f:
-        #         f.write(str(mean_all_reward) + "\n")
-        #     with open("best_elite_rewards_" + str(myRand) + ".txt", "a") as f:
-        #         f.write(str(mean_best_reward) + "\n")
-        # if i % 200 == 2:  # To create a timeline, like in Figure 3
-        #     with open("best_species_timeline_txt_" + str(myRand) + ".txt", "a") as f:
-        #         f.write(str(super_actions[0]))
-        #         f.write("\n")
+    # if i % 20 == 1:  # Write all important info to files every 20 iterations
+    #     with open("best_species_pickle_" + str(myRand) + ".txt", "wb") as fp:
+    #         pickle.dump(super_actions, fp)
+    #     with open("best_species_txt_" + str(myRand) + ".txt", "w") as f:
+    #         for item in super_actions:
+    #             f.write(str(item))
+    #             f.write("\n")
+    #     with open("best_species_rewards_" + str(myRand) + ".txt", "w") as f:
+    #         for item in super_rewards:
+    #             f.write(str(item))
+    #             f.write("\n")
+    #     with open("best_100_rewards_" + str(myRand) + ".txt", "a") as f:
+    #         f.write(str(mean_all_reward) + "\n")
+    #     with open("best_elite_rewards_" + str(myRand) + ".txt", "a") as f:
+    #         f.write(str(mean_best_reward) + "\n")
+    # if i % 200 == 2:  # To create a timeline, like in Figure 3
+    #     with open("best_species_timeline_txt_" + str(myRand) + ".txt", "a") as f:
+    #         f.write(str(super_actions[0]))
+    #         f.write("\n")
+
+
+# brouwer_state = [
+#  0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0,
+#  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1,
+#  1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1,
+#  0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0,
+#  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0,
+#  1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+#  1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+#  1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0,
+#  0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,]
