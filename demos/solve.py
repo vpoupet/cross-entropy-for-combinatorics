@@ -7,7 +7,7 @@ import networkx as nx
 import numpy as np
 import tensorflow
 
-N = 19  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
+N = 25  # number of vertices in the graph. Only used in the reward function, not directly relevant to the algorithm
 # The length of the word we are generating. Here we are generating a graph, so we create a 0-1 word of length (N choose 2)
 MYN = N * (N - 1) // 2
 
@@ -62,6 +62,13 @@ def laplacian(g):
     return l
 
 
+def signless_laplacian(g):
+    l = g[:, :]
+    for i in range(len(l)):
+        l[i, i] = g[i, :].sum()
+    return l
+
+
 def nb_components(g):
     l = laplacian(g)
     eigen_values = np.linalg.eigvals(l)
@@ -109,9 +116,19 @@ def get_reward_deg(state):
 def get_reward_brouwer(state):
     global best_reward, best_state
 
-    t = 15
+    t = 10
     g = make_matrix(state)
     l = laplacian(g)
+    eigen_values = np.sort(np.linalg.eigvals(l))
+    return sum(eigen_values[-t:]) - np.count_nonzero(state[:MYN]) - t * (t + 1) / 2
+
+
+def get_reward_ashraf(state):
+    global best_reward, best_state
+
+    t = 10
+    g = make_matrix(state)
+    l = signless_laplacian(g)
     eigen_values = np.sort(np.linalg.eigvals(l))
     return sum(eigen_values[-t:]) - np.count_nonzero(state[:MYN]) - t * (t + 1) / 2
 
@@ -170,7 +187,7 @@ def get_reward_conj21(state):
     return reward
 
 
-get_reward = get_reward_conj21
+get_reward = get_reward_ashraf
 
 # No need to change anything below here.
 
