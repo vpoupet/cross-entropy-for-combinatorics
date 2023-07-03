@@ -2,3 +2,4 @@ tensorflow
 networkx
 matplotlib
 scipy
+numba
