@@ -110,12 +110,14 @@ def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
 
 
 def get_reward_third_eigenvalue(state: np.ndarray[int], n: int) -> float:
+    # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = sorted(np.linalg.eigvals(g))
     return eigen_values[-4] - n/4
 
 
 def get_reward_bollobas_nikiforov(state: np.ndarray[int], n: int) -> float:
+    # see this : https://arxiv.org/pdf/2101.05229.pdf
     m = make_matrix(state, n)
     g = make_graph(state, n)
     eigen_values = sorted(np.linalg.eigvals(m))
@@ -124,6 +126,7 @@ def get_reward_bollobas_nikiforov(state: np.ndarray[int], n: int) -> float:
 
 
 def get_reward_Elphick_Linz_Wocjan(state: np.ndarray[int], n: int) -> float:
+    # see this : https://arxiv.org/pdf/2101.05229.pdf
     m = make_matrix(state, n)
     g = make_graph(state, n)
     eigen_values = sorted(np.linalg.eigvals(m))
