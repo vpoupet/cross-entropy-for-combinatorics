@@ -152,8 +152,10 @@ def run(
                 f.write("".join(str(x) for x in best_graph) + "\n")
                 f.write(f"{best_reward} ({time.time() - start_time})\n\n")
             if best_reward > EPSILON:
-                print(best_graph)
-                nx.draw_kamada_kawai(make_graph(best_graph))
+                print(f"Best reward: {best_reward}")
+                # print best instance found
+                print(f"[{', '.join(str(x) for x in best_graph)}]")
+                nx.draw_kamada_kawai(make_graph(best_graph, nb_vertices))
                 plt.show()
                 exit()
 
