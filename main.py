@@ -79,7 +79,7 @@ def run_batch(
         states[:, step, step_k] = actions[:, step]
 
     for i in range(batch_size):
-        rewards[i] = get_reward(states[i, game_length - 1, :], nb_vertices)
+        rewards[i] = get_reward(states[i, game_length - 1, :graph_word_size], nb_vertices)
 
     return states, actions, rewards
 
@@ -92,6 +92,7 @@ def run(
     super_ratio: float,
     learning_rate: float,
     hidden_layer_neurons: List[int],
+    output_file: str,
 ) -> None:
     """
     Runs the learning process
@@ -109,8 +110,7 @@ def run(
     nb_elites = int(batch_size * elite_ratio)
     nb_supers = int(batch_size * super_ratio)
 
-    best_reward = -10
-    best_graph = None
+    best_reward: float = -10
     start_time = time.time()
 
     model = make_model(nb_vertices, learning_rate, hidden_layer_neurons)
@@ -148,7 +148,7 @@ def run(
             best_graph = states[
                 batch_best_reward_index, game_length - 1, :graph_word_size
             ]
-            with open("results_4c.txt", "a") as f:
+            with open(output_file, "a") as f:
                 f.write("".join(str(x) for x in best_graph) + "\n")
                 f.write(f"{best_reward} ({time.time() - start_time})\n\n")
             if best_reward > EPSILON:
@@ -187,4 +187,5 @@ if __name__ == "__main__":
         super_ratio=0.05,
         learning_rate=0.0005,
         hidden_layer_neurons=[128, 64, 4],
+        output_file="results.txt",
     )
