@@ -110,9 +110,33 @@ def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
 
 
 def get_reward_third_eigenvalue(state: np.ndarray[int], n: int) -> float:
+    # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = sorted(np.linalg.eigvals(g))
     return eigen_values[-4] - n/4
+
+
+def get_reward_bollobas_nikiforov(state: np.ndarray[int], n: int) -> float:
+    # see this : https://arxiv.org/pdf/2101.05229.pdf
+    m = make_matrix(state, n)
+    g = make_graph(state, n)
+    eigen_values = sorted(np.linalg.eigvals(m))
+    clique_number = max(len(c) for c in nx.find_cliques(g))
+    return - 2.0*np.sum(state)*(clique_number-1)/clique_number + eigen_values[-1]*eigen_values[-1] + eigen_values[-2]*eigen_values[-2]
+
+
+def get_reward_Elphick_Linz_Wocjan(state: np.ndarray[int], n: int) -> float:
+    # see this : https://arxiv.org/pdf/2101.05229.pdf
+    m = make_matrix(state, n)
+    g = make_graph(state, n)
+    eigen_values = sorted(np.linalg.eigvals(m))
+    strictly_positive_eigenvalues = [x for x in eigen_values if x > 10**(-8)]
+    clique_number = max(len(c) for c in nx.find_cliques(g))
+    l = min(len(strictly_positive_eigenvalues),clique_number)
+    somme = 0 
+    for x in range(l):
+        somme += strictly_positive_eigenvalues[x]*strictly_positive_eigenvalues[x]
+    return - 2.0*np.sum(state)*(clique_number-1)/clique_number + somme
 
 
 def get_reward_clique(state: np.ndarray[int], n: int) -> float:
