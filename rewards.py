@@ -114,3 +114,11 @@ def get_reward_third_eigenvalue(state: np.ndarray[int], n: int) -> float:
     eigen_values = sorted(np.linalg.eigvals(g))
     return eigen_values[-4] - n/4
 
+
+def get_reward_clique(state: np.ndarray[int], n: int) -> float:
+    """
+    Dummy reward function that aims to build a clique (more edges give better reward).
+    
+    Used only for testing purposes.
+    """
+    return 1 + sum(state) - (n * (n-1) // 2)
