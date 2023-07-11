@@ -1,14 +1,17 @@
 import random
 import time
-from typing import List
+from typing import List, Tuple
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import tensorflow
+import numpy.typing as npt
 
 from utils import make_graph, EPSILON
 from rewards import get_reward_third_eigenvalue as get_reward
+
+INF = float("inf")
 
 
 def get_graph_word_size(nb_vertices: int) -> int:
@@ -48,17 +51,16 @@ def run_batch(
     model: tensorflow.keras.Model,
     batch_size: int,
     game_length: int,
-    graphs: np.ndarray = None,
-) -> None:
+    graphs: npt.NDArray,
+) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray]:
     graph_word_size = get_graph_word_size(nb_vertices)
     state_size = get_state_size(nb_vertices)
 
-    states: np.ndarray[int] = np.zeros((batch_size, game_length, state_size), dtype=int)
-    actions: np.ndarray[int] = np.zeros([batch_size, game_length], dtype=int)
-    if graphs is not None:
-        states[:, 0, :graph_word_size] = np.repeat(
-            graphs, batch_size // graphs.shape[0], axis=0
-        )
+    states = np.zeros((batch_size, game_length, state_size), dtype=int)
+    actions = np.zeros([batch_size, game_length], dtype=int)
+    states[:, 0, :graph_word_size] = np.repeat(
+        graphs, batch_size // graphs.shape[0], axis=0
+    )
 
     prob = np.zeros(batch_size)
     step_i: int = 0
@@ -79,7 +81,9 @@ def run_batch(
         states[:, step, step_k] = actions[:, step]
 
     for i in range(batch_size):
-        rewards[i] = get_reward(states[i, game_length - 1, :graph_word_size], nb_vertices)
+        rewards[i] = get_reward(
+            states[i, game_length - 1, :graph_word_size], nb_vertices
+        )
 
     return states, actions, rewards
 
@@ -110,14 +114,14 @@ def run(
     nb_elites = int(batch_size * elite_ratio)
     nb_supers = int(batch_size * super_ratio)
 
-    best_reward: float = -10
+    best_reward: float = -INF
     start_time = time.time()
 
     model = make_model(nb_vertices, learning_rate, hidden_layer_neurons)
 
     super_states = np.zeros((0, game_length, state_size), dtype=int)
     super_actions = np.zeros((0, game_length), dtype=int)
-    super_rewards = np.zeros((0,))
+    super_rewards = np.zeros((0,), dtype=float)
 
     best_graphs = np.random.randint(2, size=(batch_size, graph_word_size))
     iteration = 0
@@ -126,7 +130,7 @@ def run(
         # generate new sessions
         tic = time.time()
         states, actions, rewards = run_batch(
-            nb_vertices, model, batch_size, game_length, graphs=best_graphs
+            nb_vertices, model, batch_size, game_length, best_graphs
         )
         states = np.append(states, super_states, axis=0)
         actions = np.append(actions, super_actions, axis=0)
