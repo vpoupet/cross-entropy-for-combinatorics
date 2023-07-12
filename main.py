@@ -164,6 +164,9 @@ def run(
                 exit()
 
         model.fit(elite_states, elite_actions)
+
+        tensorflow.keras.backend.clear_session()
+
         best_graphs = states[elite_indexes, game_length - 1, :graph_word_size]
 
         # select super sessions (sessions that will be kept for the next generation)
