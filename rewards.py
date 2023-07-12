@@ -22,22 +22,6 @@ def get_reward_square_eigenvalues(state: np.ndarray[int], n: int) -> float:
     return n - 1 - min_square(g)
 
 
-def get_reward_avg_deg(state: np.ndarray[int], n: int) -> float:
-    return -abs(3 - np.sum(state) * 2 / n)
-
-
-def get_reward_tree(state: np.ndarray[int], n: int) -> float:
-    m = make_matrix(state, n)
-    if nb_components(m) > 1:
-        return -100
-    return -sum(state)
-
-
-def get_reward_deg(state: np.ndarray[int], n: int) -> float:
-    g = make_matrix(state, n)
-    return -abs(g.sum(axis=-1) - 3).sum()
-
-
 def get_reward_brouwer(state: np.ndarray[int], n: int) -> float:
     t = 10
     g = make_matrix(state, n)
@@ -113,13 +97,15 @@ def get_reward_third_eigenvalue(state: np.ndarray[int], n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = sorted(np.linalg.eigvals(g))
-    return eigen_values[-3] - n/3
+    return eigen_values[-3] - n / 3
+
 
 def get_reward_fourth_eigenvalue(state: np.ndarray[int], n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = sorted(np.linalg.eigvals(g))
-    return eigen_values[-4] - n/4
+    return eigen_values[-4] - n / 4
+
 
 def get_reward_bollobas_nikiforov(state: np.ndarray[int], n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
@@ -127,7 +113,11 @@ def get_reward_bollobas_nikiforov(state: np.ndarray[int], n: int) -> float:
     g = make_graph(state, n)
     eigen_values = sorted(np.linalg.eigvals(m))
     clique_number = max(len(c) for c in nx.find_cliques(g))
-    return - 2.0*np.sum(state)*(clique_number-1)/clique_number + eigen_values[-1]*eigen_values[-1] + eigen_values[-2]*eigen_values[-2]
+    return (
+        -2.0 * np.sum(state) * (clique_number - 1) / clique_number
+        + eigen_values[-1] * eigen_values[-1]
+        + eigen_values[-2] * eigen_values[-2]
+    )
 
 
 def get_reward_Elphick_Linz_Wocjan(state: np.ndarray[int], n: int) -> float:
@@ -135,19 +125,33 @@ def get_reward_Elphick_Linz_Wocjan(state: np.ndarray[int], n: int) -> float:
     m = make_matrix(state, n)
     g = make_graph(state, n)
     eigen_values = sorted(np.linalg.eigvals(m))
-    strictly_positive_eigenvalues = [x for x in eigen_values if x > 10**(-8)]
+    strictly_positive_eigenvalues = [x for x in eigen_values if x > 10 ** (-8)]
     clique_number = max(len(c) for c in nx.find_cliques(g))
-    l = min(len(strictly_positive_eigenvalues),clique_number)
-    somme = 0 
+    l = min(len(strictly_positive_eigenvalues), clique_number)
+    somme = 0
     for x in range(l):
-        somme += strictly_positive_eigenvalues[x]*strictly_positive_eigenvalues[x]
-    return - 2.0*np.sum(state)*(clique_number-1)/clique_number + somme
+        somme += strictly_positive_eigenvalues[x] * strictly_positive_eigenvalues[x]
+    return -2.0 * np.sum(state) * (clique_number - 1) / clique_number + somme
 
 
 def get_reward_clique(state: np.ndarray[int], n: int) -> float:
     """
     Dummy reward function that aims to build a clique (more edges give better reward).
-    
+
     Used only for testing purposes.
     """
-    return 1 + sum(state) - (n * (n-1) // 2)
+    return 1 + sum(state) - (n * (n - 1) // 2)
+
+
+mapping = {
+    "square": get_reward_square_eigenvalues,
+    "brouwer": get_reward_brouwer,
+    "ashraf": get_reward_ashraf,
+    "conj21": get_reward_conj21,
+    "aouchiche": get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy,
+    "third_ev": get_reward_third_eigenvalue,
+    "fourth_ev": get_reward_fourth_eigenvalue,
+    "bollobas": get_reward_bollobas_nikiforov,
+    "elphick": get_reward_Elphick_Linz_Wocjan,
+    "clique": get_reward_clique,
+}

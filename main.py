@@ -1,15 +1,16 @@
 import random
 import time
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import tensorflow
 import numpy.typing as npt
+import argparse
 
 from utils import make_graph, EPSILON
-from rewards import get_reward_third_eigenvalue as get_reward
+import rewards
 
 INF = float("inf")
 
@@ -52,6 +53,7 @@ def run_batch(
     batch_size: int,
     game_length: int,
     graphs: npt.NDArray,
+    get_reward: Callable[[npt.NDArray, int], float],
 ) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray]:
     graph_word_size = get_graph_word_size(nb_vertices)
     state_size = get_state_size(nb_vertices)
@@ -92,6 +94,7 @@ def run(
     nb_vertices: int,
     game_length: int,
     batch_size: int,
+    get_reward: Callable[[npt.NDArray, int], float],
     elite_ratio: float,
     super_ratio: float,
     learning_rate: float,
@@ -130,7 +133,7 @@ def run(
         # generate new sessions
         tic = time.time()
         states, actions, rewards = run_batch(
-            nb_vertices, model, batch_size, game_length, best_graphs
+            nb_vertices, model, batch_size, game_length, best_graphs, get_reward
         )
         states = np.append(states, super_states, axis=0)
         actions = np.append(actions, super_actions, axis=0)
@@ -186,13 +189,75 @@ def run(
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "reward_function",
+        type=str,
+        help=f"reward function to use. Possible values: {', '.join(rewards.mapping.keys())}",
+    )
+    parser.add_argument(
+        "nb_vertices",
+        type=int,
+        help="number of vertices in the graph",
+    )
+    parser.add_argument(
+        "--output_file",
+        "-o",
+        type=str,
+        default="results.txt",
+        help="file to write results to",
+    )
+    parser.add_argument(
+        "--learning_rate",
+        "-l",
+        type=float,
+        default=0.0005,
+        help="learning rate of the model. Increase this to make convergence faster, decrease if the algorithm gets stuck in local optima too often.",
+    )
+    parser.add_argument(
+        "--game_length",
+        "-g",
+        type=int,
+        default=20,
+        help="length of the game",
+    )
+    parser.add_argument(
+        "--batch_size",
+        "-b",
+        type=int,
+        default=2000,
+        help="number of new sessions per iteration",
+    )
+    parser.add_argument(
+        "--elite_ratio",
+        type=float,
+        default=0.1,
+        help="ratio of best instances we are learning from",
+    )
+    parser.add_argument(
+        "--super_ratio",
+        type=float,
+        default=0.05,
+        help="ratio of best instances that survive to the next iteration",
+    )
+    parser.add_argument(
+        "--hidden_layer_neurons",
+        type=int,
+        nargs="+",
+        default=[128, 64, 4],
+        help="number of neurons in the model hidden layers",
+    )
+    args = parser.parse_args()
+
+    get_reward = rewards.mapping[args.reward_function]
     run(
-        nb_vertices=20,
-        game_length=20,
-        batch_size=2000,
-        elite_ratio=0.1,
-        super_ratio=0.05,
-        learning_rate=0.0005,
-        hidden_layer_neurons=[128, 64, 4],
-        output_file="results.txt",
+        nb_vertices=args.nb_vertices,
+        game_length=args.game_length,
+        batch_size=args.batch_size,
+        elite_ratio=args.elite_ratio,
+        super_ratio=args.super_ratio,
+        learning_rate=args.learning_rate,
+        hidden_layer_neurons=args.hidden_layer_neurons,
+        output_file=args.output_file,
+        get_reward=get_reward,
     )
