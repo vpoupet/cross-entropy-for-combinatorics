@@ -113,8 +113,13 @@ def get_reward_third_eigenvalue(state: np.ndarray[int], n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = sorted(np.linalg.eigvals(g))
-    return eigen_values[-4] - n/4
+    return eigen_values[-3] - n/3
 
+def get_reward_fourth_eigenvalue(state: np.ndarray[int], n: int) -> float:
+    # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
+    g = make_matrix(state, n)
+    eigen_values = sorted(np.linalg.eigvals(g))
+    return eigen_values[-4] - n/4
 
 def get_reward_bollobas_nikiforov(state: np.ndarray[int], n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
