@@ -1,3 +1,4 @@
+import argparse
 import random
 import time
 from typing import Callable, List, Tuple
@@ -5,12 +6,11 @@ from typing import Callable, List, Tuple
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import tensorflow
 import numpy.typing as npt
-import argparse
+import tensorflow as tf
 
-from utils import make_graph, EPSILON
 import rewards
+from utils import EPSILON, make_graph
 
 INF = float("inf")
 
@@ -27,18 +27,18 @@ def make_model(
     nb_vertices: int,
     learning_rate: float,
     hidden_layer_neurons: List[int],
-) -> tensorflow.keras.Model:
+) -> tf.keras.Model:
     state_size = get_state_size(nb_vertices)
 
-    model: tensorflow.keras.Model = tensorflow.keras.models.Sequential()
+    model: tf.keras.Model = tf.keras.models.Sequential()
     for nb_neurons in hidden_layer_neurons:
-        model.add(tensorflow.keras.layers.Dense(nb_neurons, activation="relu"))
-    model.add(tensorflow.keras.layers.Dense(1, activation="sigmoid"))
+        model.add(tf.keras.layers.Dense(nb_neurons, activation="relu"))
+    model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
     model.build((None, state_size))
     # Adam optimizer also works well, with lower learning rate
     model.compile(
         loss="binary_crossentropy",
-        optimizer=tensorflow.keras.optimizers.SGD(learning_rate=learning_rate),
+        optimizer=tf.keras.optimizers.SGD(learning_rate=learning_rate),
     )
     print(model.summary())
     return model
@@ -49,7 +49,7 @@ def make_model(
 
 def run_batch(
     nb_vertices: int,
-    model: tensorflow.keras.Model,
+    model: tf.keras.Model,
     batch_size: int,
     game_length: int,
     graphs: npt.NDArray,
@@ -168,7 +168,7 @@ def run(
 
         model.fit(elite_states, elite_actions)
 
-        tensorflow.keras.backend.clear_session()
+        tf.keras.backend.clear_session()
 
         best_graphs = states[elite_indexes, game_length - 1, :graph_word_size]
 
