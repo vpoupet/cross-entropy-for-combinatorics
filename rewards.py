@@ -15,14 +15,14 @@ import math
 INF = float("inf")
 
 
-def get_reward_square_eigenvalues(state: np.ndarray[int], n: int) -> float:
+def get_reward_square_eigenvalues(state: np.ndarray, n: int) -> float:
     g = make_graph(state, n)
     if nx.number_connected_components(g) > 1:
         return -INF
     return n - 1 - min_square(g)
 
 
-def get_reward_brouwer(state: np.ndarray[int], n: int) -> float:
+def get_reward_brouwer(state: np.ndarray, n: int) -> float:
     t = 10
     g = make_matrix(state, n)
     l = laplacian(g)
@@ -30,7 +30,7 @@ def get_reward_brouwer(state: np.ndarray[int], n: int) -> float:
     return sum(eigen_values[-t:]) - np.count_nonzero(state) - t * (t + 1) / 2
 
 
-def get_reward_ashraf(state: np.ndarray[int], n: int) -> float:
+def get_reward_ashraf(state: np.ndarray, n: int) -> float:
     t = 10
     g = make_matrix(state, n)
     l = signless_laplacian(g)
@@ -38,7 +38,7 @@ def get_reward_ashraf(state: np.ndarray[int], n: int) -> float:
     return sum(eigen_values[-t:]) - np.count_nonzero(state) - t * (t + 1) / 2
 
 
-def get_reward_conj21(state: np.ndarray[int], n: int) -> float:
+def get_reward_conj21(state: np.ndarray, n: int) -> float:
     """
     Calculates the reward for a given word.
     This function is very slow, it can be massively sped up with numba -- but numba doesn't support networkx yet,
@@ -81,7 +81,7 @@ def get_reward_conj21(state: np.ndarray[int], n: int) -> float:
 
 
 def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
-    state: np.ndarray[int], n: int
+    state: np.ndarray, n: int
 ) -> float:
     g = make_matrix(state, n)
     eigen_values = np.linalg.eigvals(g)
@@ -93,21 +93,21 @@ def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
     )
 
 
-def get_reward_third_eigenvalue(state: np.ndarray[int], n: int) -> float:
+def get_reward_third_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = sorted(np.linalg.eigvals(g))
     return eigen_values[-3] - n / 3
 
 
-def get_reward_fourth_eigenvalue(state: np.ndarray[int], n: int) -> float:
+def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = sorted(np.linalg.eigvals(g))
     return eigen_values[-4] - 0.269*n
 
 
-def get_reward_bollobas_nikiforov(state: np.ndarray[int], n: int) -> float:
+def get_reward_bollobas_nikiforov(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
     m = make_matrix(state, n)
     g = make_graph(state, n)
@@ -120,7 +120,7 @@ def get_reward_bollobas_nikiforov(state: np.ndarray[int], n: int) -> float:
     )
 
 
-def get_reward_Elphick_Linz_Wocjan(state: np.ndarray[int], n: int) -> float:
+def get_reward_Elphick_Linz_Wocjan(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
     m = make_matrix(state, n)
     g = make_graph(state, n)
@@ -134,7 +134,7 @@ def get_reward_Elphick_Linz_Wocjan(state: np.ndarray[int], n: int) -> float:
     return -2.0 * np.sum(state) * (clique_number - 1) / clique_number + somme
 
 
-def get_reward_clique(state: np.ndarray[int], n: int) -> float:
+def get_reward_clique(state: np.ndarray, n: int) -> float:
     """
     Dummy reward function that aims to build a clique (more edges give better reward).
 
