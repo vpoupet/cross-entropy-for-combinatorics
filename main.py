@@ -1,4 +1,5 @@
 import argparse
+import random
 import time
 from typing import Callable, List, Tuple
 
@@ -7,7 +8,6 @@ import numpy.typing as npt
 import tensorflow as tf
 
 import rewards
-from utils import EPSILON, make_graph
 
 INF = float("inf")
 
@@ -43,6 +43,7 @@ def make_model(
 
 def run_batch(
     nb_vertices: int,
+    game_length: int,
     model: tf.keras.Model,
     batch_size: int,
     best_graphs: npt.NDArray,
@@ -54,25 +55,36 @@ def run_batch(
     graphs = np.repeat(best_graphs, batch_size // len(best_graphs), axis=0)
     graphs = np.append(graphs, best_graphs[: batch_size % len(best_graphs)], axis=0)
 
-    states = np.zeros((batch_size, graph_word_size, state_size), dtype=int)
-    actions = np.zeros((batch_size, graph_word_size), dtype=int)
+    states = np.zeros((batch_size, game_length, state_size), dtype=int)
+    actions = np.zeros((batch_size, game_length), dtype=int)
 
-    step_i: int = 0
-    step_j: int = 1
+    # step_i = 0
+    # step_j = 1
+    # step_k = 0
+    for step in range(game_length):
+        states[:, step, :graph_word_size] = graphs
+        # pick a random edge
+        step_i = random.randrange(nb_vertices)
+        step_j = (step_i + random.randrange(nb_vertices - 1)) % nb_vertices
+        step_i, step_j = min(step_i, step_j), max(step_i, step_j)
+        step_k = (
+            nb_vertices * step_i - (step_i * (step_i + 1)) // 2 + step_j - step_i - 1
+        )
 
-    for step in range(graph_word_size):
         states[:, step, graph_word_size + step_i] = 1
         states[:, step, graph_word_size + step_j] = 1
-        prob = model(states[:, step, :]).numpy()
 
+        prob = model(states[:, step, :]).numpy()
         step_actions = (np.random.random(size=(batch_size,)) < prob[:, 0]).astype(int)
         actions[:, step] = step_actions
-        graphs[:, step] = step_actions
+        # update graphs
+        graphs[:, step_k] = step_actions
 
-        step_j += 1
-        if step_j == nb_vertices:
-            step_i += 1
-            step_j = step_i + 1
+        # step_j += 1
+        # if step_j == nb_vertices:
+        #     step_i += 1
+        #     step_j = step_i + 1
+        # step_k += 1
 
     rewards = np.apply_along_axis(get_reward, 1, graphs, nb_vertices)
 
@@ -81,6 +93,7 @@ def run_batch(
 
 def run(
     nb_vertices: int,
+    game_length: int,
     batch_size: int,
     get_reward: Callable[[npt.NDArray, int], float],
     elite_ratio: float,
@@ -110,8 +123,8 @@ def run(
 
     model = make_model(nb_vertices, learning_rate, hidden_layer_neurons)
 
-    super_states = np.zeros((0, graph_word_size, state_size), dtype=int)
-    super_actions = np.zeros((0, graph_word_size), dtype=int)
+    super_states = np.zeros((0, game_length, state_size), dtype=int)
+    super_actions = np.zeros((0, game_length), dtype=int)
     super_rewards = np.zeros((0,), dtype=float)
     super_graphs = np.zeros((0, graph_word_size), dtype=int)
 
@@ -122,7 +135,12 @@ def run(
         # generate new sessions
         tic = time.time()
         graphs, states, actions, rewards = run_batch(
-            nb_vertices, model, batch_size, best_graphs, get_reward
+            nb_vertices,
+            game_length,
+            model,
+            batch_size,
+            best_graphs,
+            get_reward,
         )
         states = np.append(states, super_states, axis=0)
         actions = np.append(actions, super_actions, axis=0)
@@ -184,6 +202,13 @@ if __name__ == "__main__":
         help="number of vertices in the graph",
     )
     parser.add_argument(
+        "--game_length",
+        "-g",
+        type=int,
+        default=None,
+        help="length of a game (number of times a random edge can be changed)",
+    )
+    parser.add_argument(
         "--output_file",
         "-o",
         type=str,
@@ -228,6 +253,7 @@ if __name__ == "__main__":
     get_reward = rewards.mapping[args.reward_function]
     run(
         nb_vertices=args.nb_vertices,
+        game_length=args.game_length,
         batch_size=args.batch_size,
         elite_ratio=args.elite_ratio,
         super_ratio=args.super_ratio,
