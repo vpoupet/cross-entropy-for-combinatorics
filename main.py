@@ -117,6 +117,8 @@ def run(
     state_size = get_state_size(nb_vertices)
     nb_elites = int(batch_size * elite_ratio)
     nb_supers = int(batch_size * super_ratio)
+    if game_length is None:
+        game_length = nb_vertices * (nb_vertices - 1) // 2
 
     best_reward: float = -INF
     start_time = time.time()
