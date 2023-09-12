@@ -143,6 +143,60 @@ def get_reward_clique(state: np.ndarray, n: int) -> float:
     return 1 + sum(state) - (n * (n - 1) // 2)
 
 
+def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
+    """
+    Difference between Szeged and Wiener index.
+    """
+    g = make_graph(state,n)
+    for i in range(n-1):
+        g.add_edge(i,i+1)
+    g.add_edge(n-1,0)
+
+    # if not nx.is_biconnected(g):
+    #     return -INF
+    degree_sequence = [d for n, d in g.degree()]
+    if all(x==n-1 for x in degree_sequence):
+        return -INF
+    distance_matrix = nx.floyd_warshall_numpy(g)
+    wiener_index = np.sum(distance_matrix)/2
+    szeged_index = 0;
+    for e in g.edges():
+        n0 = 0; n1 = 0;
+        for i in range(n):
+            if distance_matrix[e[0]][i] > distance_matrix[e[1]][i]:
+                n0 += 1
+            elif distance_matrix[e[0]][i] < distance_matrix[e[1]][i]:
+                n1 += 1
+        szeged_index += n0 * n1;
+    if wiener_index == INF:
+        return -INF
+    if -szeged_index + wiener_index + 2*n == 0:
+        print(make_matrix(state))
+        exit(1)
+    return -szeged_index + wiener_index + 2*n;
+
+
+def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
+    # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
+    g = make_graph(state, n)
+    m = make_matrix(state, n)
+    if abs(np.linalg.det(m)) <= EPSILON:
+        return -1000
+    somme = sum(abs(np.linalg.eigvalsh(m)))
+    maxDegree = 0
+    minDegree = n
+    for i,d in g.degree():
+        if d > maxDegree:
+            maxDegree = d
+        if d < minDegree:
+            minDegree = d
+    if minDegree == n-1:
+        return -1000
+    if minDegree + maxDegree - somme > EPSILON:
+        print(m)
+    return minDegree + maxDegree - somme
+
+
 mapping = {
     "square": get_reward_square_eigenvalues,
     "brouwer": get_reward_brouwer,
@@ -154,4 +208,6 @@ mapping = {
     "bollobas": get_reward_bollobas_nikiforov,
     "elphick": get_reward_Elphick_Linz_Wocjan,
     "clique": get_reward_clique,
+    "szeged_wiener": get_reward_difference_szeged_wiener,
+    "akbari": get_reward_akbari_hosseinzadeh
 }
