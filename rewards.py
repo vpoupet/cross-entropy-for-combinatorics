@@ -1,5 +1,6 @@
 import numpy as np
 import networkx as nx
+import grinpy as gp
 from utils import (
     laplacian,
     signless_laplacian,
@@ -112,7 +113,7 @@ def get_reward_bollobas_nikiforov(state: np.ndarray, n: int) -> float:
     m = make_matrix(state, n)
     g = make_graph(state, n)
     eigen_values = np.linalg.eigvalsh(m)
-    clique_number = max(len(c) for c in nx.find_cliques(g))
+    clique_number = gp.clique_number(g)
     return (
         -2.0 * np.sum(state) * (clique_number - 1) / clique_number
         + eigen_values[-1] * eigen_values[-1]
@@ -125,13 +126,32 @@ def get_reward_Elphick_Linz_Wocjan(state: np.ndarray, n: int) -> float:
     m = make_matrix(state, n)
     g = make_graph(state, n)
     eigen_values = np.linalg.eigvalsh(m)
-    strictly_positive_eigenvalues = [x for x in eigen_values if x > 10 ** (-8)]
-    clique_number = max(len(c) for c in nx.find_cliques(g))
+    strictly_positive_eigenvalues = [x for x in eigen_values if x > EPSILON]
+    clique_number = gp.clique_number(g)
     l = min(len(strictly_positive_eigenvalues), clique_number)
     somme = 0
     for x in range(l):
         somme += strictly_positive_eigenvalues[x] * strictly_positive_eigenvalues[x]
     return -2.0 * np.sum(state) * (clique_number - 1) / clique_number + somme
+
+
+def get_reward_Elphick_Wocjan(state: np.ndarray, n: int) -> float:
+    # see this : https://arxiv.org/pdf/2101.05229.pdf
+    m = make_matrix(state, n)
+    g = make_graph(state, n)
+    degree_sequence = [d for n, d in g.degree()]
+    eigen_values = np.linalg.eigvalsh(m)
+    strictly_positive_eigenvalues = [x for x in eigen_values if x > EPSILON]
+    clique_number = gp.clique_number(g)
+    if clique_number==0:
+        return -INF
+    somme = 0
+    for x in range(len(strictly_positive_eigenvalues)):
+        somme += strictly_positive_eigenvalues[x] * strictly_positive_eigenvalues[x]
+    if np.sqrt(somme) - n*(1 - 1/clique_number) > EPSILON:
+        print("Bingo elphick wocjan !")
+        print(m)
+    return  np.sqrt(somme) - n*(1 - 1/clique_number)
 
 
 def get_reward_clique(state: np.ndarray, n: int) -> float:
@@ -141,6 +161,107 @@ def get_reward_clique(state: np.ndarray, n: int) -> float:
     Used only for testing purposes.
     """
     return 1 + sum(state) - (n * (n - 1) // 2)
+
+def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
+    """
+    Conjecture saying that Randic index can be lower bounded in terms of the graph radius.
+    """
+    import grinpy as gp
+    g = make_graph(state,n)
+    if not nx.is_connected(g):
+        return -INF;
+    randic_index = gp.randic_index(g)
+    radius = nx.radius(g)
+    if radius - randic_index > EPSILON:
+        print("bingo randic !")
+        print(state)
+        print(make_graph(state,n))
+        exit(1)
+    return radius - randic_index
+
+def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
+    """
+    Difference between Szeged and Wiener index.
+    """
+    g = make_graph(state,n)
+    for i in range(n-1):
+        g.add_edge(i,i+1)
+    g.add_edge(n-1,0)
+
+    # if not nx.is_biconnected(g):
+    #     return -INF
+    degree_sequence = [d for n, d in g.degree()]
+    if all(x==n-1 for x in degree_sequence):
+        return -INF
+    distance_matrix = nx.floyd_warshall_numpy(g)
+    wiener_index = np.sum(distance_matrix)/2
+    szeged_index = 0;
+    for e in g.edges():
+        n0 = 0; n1 = 0;
+        for i in range(n):
+            if distance_matrix[e[0]][i] > distance_matrix[e[1]][i]:
+                n0 += 1
+            elif distance_matrix[e[0]][i] < distance_matrix[e[1]][i]:
+                n1 += 1
+        szeged_index += n0 * n1;
+    if wiener_index == INF:
+        return -INF
+    if -szeged_index + wiener_index + 2*n > EPSILON:
+        sorted_degree_sequence = np.sort(degree_sequence)
+        if sorted_degree_sequence[0]==2 and sorted_degree_sequence[-1] == n-1 and sorted_degree_sequence[-2] == n-1:
+            found = False
+            for d in range(1,len(sorted_degree_sequence)-2):
+                if sorted_degree_sequence[d] != n-2:
+                    found = True; break
+            if found:
+                print("BINGO 1")
+                print(state)
+                print(make_matrix(state,n))
+                exit(1)
+            else:
+                return -INF
+        elif sorted_degree_sequence[0]==n-3 and sorted_degree_sequence[1] == n-2 and sorted_degree_sequence[2] == n-2:
+            found = False
+            for d in range(1,len(sorted_degree_sequence)-2):
+                if sorted_degree_sequence[d] != n-1:
+                    found = True; break
+            if found:
+                print("BINGO 2")
+                print(state)
+                print(make_matrix(state,n))
+                exit(1)
+            else:
+                return -INF
+        else:
+            print("BINGO 3")
+            print(make_matrix(state,n))
+            exit(1)
+    return -szeged_index + wiener_index + 2*n;
+
+
+def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
+    # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
+    g = make_graph(state, n)
+    m = make_matrix(state, n)
+
+    maxDegree = 0
+    minDegree = n
+    for i,d in g.degree():
+        if d > maxDegree:
+            maxDegree = d
+        if d < minDegree:
+            minDegree = d
+    if minDegree == n-1 or n >= minDegree+maxDegree or 2*sum(state)+n*(n-1) >= (minDegree+maxDegree)^2:
+        return -1000
+
+    determinant = abs(np.linalg.det(m))
+    eigen_vals = np.linalg.eigvalsh(m)
+    if determinant <= EPSILON or abs(determinant) >= eigen_vals[-1]:
+        return -1000
+    somme = sum(abs(eigen_vals))
+    if minDegree + maxDegree - somme > EPSILON:
+        print(m)
+    return minDegree + maxDegree - somme
 
 
 mapping = {
@@ -152,6 +273,10 @@ mapping = {
     "third_ev": get_reward_third_eigenvalue,
     "fourth_ev": get_reward_fourth_eigenvalue,
     "bollobas": get_reward_bollobas_nikiforov,
-    "elphick": get_reward_Elphick_Linz_Wocjan,
+    "elphick_linz_wocjan": get_reward_Elphick_Linz_Wocjan,
+    "elphick_wocjan": get_reward_Elphick_Wocjan,
     "clique": get_reward_clique,
+    "szeged_wiener": get_reward_difference_szeged_wiener,
+    "akbari": get_reward_akbari_hosseinzadeh,
+    "randic": get_reward_randic_radius
 }
