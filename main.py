@@ -48,6 +48,7 @@ def run_batch(
     batch_size: int,
     best_graphs: npt.NDArray,
     get_reward: Callable[[npt.NDArray, int], float],
+    random_order: bool,
 ) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
     graph_word_size = get_graph_word_size(nb_vertices)
     state_size = get_state_size(nb_vertices)
@@ -58,18 +59,20 @@ def run_batch(
     states = np.zeros((batch_size, game_length, state_size), dtype=int)
     actions = np.zeros((batch_size, game_length), dtype=int)
 
-    # step_i = 0
-    # step_j = 1
-    # step_k = 0
+    if not random_order:
+        step_i = 0
+        step_j = 1
+        step_k = 0
     for step in range(game_length):
         states[:, step, :graph_word_size] = graphs
-        # pick a random edge
-        step_i = random.randrange(nb_vertices)
-        step_j = (step_i + random.randrange(nb_vertices - 1)) % nb_vertices
-        step_i, step_j = min(step_i, step_j), max(step_i, step_j)
-        step_k = (
-            nb_vertices * step_i - (step_i * (step_i + 1)) // 2 + step_j - step_i - 1
-        )
+        if random_order:
+            # pick a random edge
+            step_i = random.randrange(nb_vertices)
+            step_j = (step_i + random.randrange(nb_vertices - 1)) % nb_vertices
+            step_i, step_j = min(step_i, step_j), max(step_i, step_j)
+            step_k = (
+                nb_vertices * step_i - (step_i * (step_i + 1)) // 2 + step_j - step_i - 1
+            )
 
         states[:, step, graph_word_size + step_i] = 1
         states[:, step, graph_word_size + step_j] = 1
@@ -80,11 +83,12 @@ def run_batch(
         # update graphs
         graphs[:, step_k] = step_actions
 
-        # step_j += 1
-        # if step_j == nb_vertices:
-        #     step_i += 1
-        #     step_j = step_i + 1
-        # step_k += 1
+        if not random_order:
+            step_j += 1
+            if step_j == nb_vertices:
+                step_i += 1
+                step_j = step_i + 1
+            step_k += 1
 
     rewards = np.apply_along_axis(get_reward, 1, graphs, nb_vertices)
 
@@ -101,6 +105,7 @@ def run(
     learning_rate: float,
     hidden_layer_neurons: List[int],
     output_file: str,
+    random_order: bool,
 ) -> None:
     """
     Runs the learning process
@@ -143,6 +148,7 @@ def run(
             batch_size,
             best_graphs,
             get_reward,
+            random_order,
         )
         states = np.append(states, super_states, axis=0)
         actions = np.append(actions, super_actions, axis=0)
@@ -204,52 +210,59 @@ if __name__ == "__main__":
         help="number of vertices in the graph",
     )
     parser.add_argument(
-        "--game_length",
+        "--game-length",
         "-g",
         type=int,
         default=None,
         help="length of a game (number of times a random edge can be changed)",
     )
     parser.add_argument(
-        "--output_file",
+        "--output-file",
         "-o",
         type=str,
         default="results.txt",
         help="file to write results to",
     )
     parser.add_argument(
-        "--learning_rate",
+        "--learning-rate",
         "-l",
         type=float,
-        default=0.0005,
+        default=0.0001,
         help="learning rate of the model. Increase this to make convergence faster, decrease if the algorithm gets stuck in local optima too often.",
     )
     parser.add_argument(
-        "--batch_size",
+        "--batch-size",
         "-b",
         type=int,
         default=2000,
         help="number of new sessions per iteration",
     )
     parser.add_argument(
-        "--elite_ratio",
+        "--elite-ratio",
         type=float,
-        default=0.1,
+        default=0.07,
         help="ratio of best instances we are learning from",
     )
     parser.add_argument(
-        "--super_ratio",
+        "--super-ratio",
         type=float,
-        default=0.05,
+        default=0.06,
         help="ratio of best instances that survive to the next iteration",
     )
     parser.add_argument(
-        "--hidden_layer_neurons",
+        "--hidden-layers",
         type=int,
         nargs="+",
         default=[128, 64, 4],
         help="number of neurons in the model hidden layers",
     )
+    parser.add_argument(
+        "--random-order",
+        action="store_true",
+        help="randomize the order of edges in each game",
+        default=False,
+    )
+
     args = parser.parse_args()
 
     get_reward = rewards.mapping[args.reward_function]
@@ -260,7 +273,8 @@ if __name__ == "__main__":
         elite_ratio=args.elite_ratio,
         super_ratio=args.super_ratio,
         learning_rate=args.learning_rate,
-        hidden_layer_neurons=args.hidden_layer_neurons,
+        hidden_layer_neurons=args.hidden_layers,
         output_file=args.output_file,
         get_reward=get_reward,
+        random_order=args.random_order,
     )
