@@ -105,8 +105,45 @@ def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
-    return eigen_values[-4] - 0.269*n
+    # return eigen_values[-4] - 0.269*n
+    if (1+eigen_values[-4])/n - (1+np.sqrt(5))/12 > EPSILON:
+        print(g)
+        print(state)
+        exit(1)
+    return (1+eigen_values[-4])/n - (1+np.sqrt(5))/12
 
+
+def get_reward_kth_eigenvalue(state: np.ndarray, n: int, k: int) -> float:
+    # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
+    g = make_matrix(state, n)
+    eigen_values = np.linalg.eigvalsh(g)
+
+    VALUES = [x + EPSILON for x in [
+        1/3,
+        (1+math.sqrt(5))/12,
+        2/9,
+        1/5,
+        4/21,
+        5/28,
+        1/6,
+        7/45,
+        8/55,
+        3/22,
+        5/39,
+        11/91,
+        4/35,
+        4/36,
+        2/19,
+        2/19,
+        2/19,
+        13/125,
+        13/125,
+        13/126,
+        25/243,
+        56/552,
+    ]]
+
+    return eigen_values[-k]/n - VALUES[k-3]
 
 def get_reward_bollobas_nikiforov(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
@@ -162,6 +199,7 @@ def get_reward_clique(state: np.ndarray, n: int) -> float:
     """
     return 1 + sum(state) - (n * (n - 1) // 2)
 
+
 def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
     """
     Conjecture saying that Randic index can be lower bounded in terms of the graph radius.
@@ -179,7 +217,7 @@ def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
         exit(1)
     return radius - randic_index
 
-def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
+def get_reward_difference_szeged_wiener(state: np.ndarray, n: int, k:int) -> float:
     """
     Difference between Szeged and Wiener index.
     """
@@ -190,9 +228,6 @@ def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
 
     # if not nx.is_biconnected(g):
     #     return -INF
-    degree_sequence = [d for n, d in g.degree()]
-    if all(x==n-1 for x in degree_sequence):
-        return -INF
     distance_matrix = nx.floyd_warshall_numpy(g)
     wiener_index = np.sum(distance_matrix)/2
     szeged_index = 0;
@@ -204,36 +239,10 @@ def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
             elif distance_matrix[e[0]][i] < distance_matrix[e[1]][i]:
                 n1 += 1
         szeged_index += n0 * n1;
-    if wiener_index == INF:
+    if wiener_index == INF or -szeged_index + wiener_index == 0 or -szeged_index + wiener_index + 2*n == 6:
         return -INF
     if -szeged_index + wiener_index + 2*n > EPSILON:
-        sorted_degree_sequence = np.sort(degree_sequence)
-        if sorted_degree_sequence[0]==2 and sorted_degree_sequence[-1] == n-1 and sorted_degree_sequence[-2] == n-1:
-            found = False
-            for d in range(1,len(sorted_degree_sequence)-2):
-                if sorted_degree_sequence[d] != n-2:
-                    found = True; break
-            if found:
-                print("BINGO 1")
-                print(state)
-                print(make_matrix(state,n))
-                exit(1)
-            else:
-                return -INF
-        elif sorted_degree_sequence[0]==n-3 and sorted_degree_sequence[1] == n-2 and sorted_degree_sequence[2] == n-2:
-            found = False
-            for d in range(1,len(sorted_degree_sequence)-2):
-                if sorted_degree_sequence[d] != n-1:
-                    found = True; break
-            if found:
-                print("BINGO 2")
-                print(state)
-                print(make_matrix(state,n))
-                exit(1)
-            else:
-                return -INF
-        else:
-            print("BINGO 3")
+            print("BINGO")
             print(make_matrix(state,n))
             exit(1)
     return -szeged_index + wiener_index + 2*n;
@@ -272,6 +281,7 @@ mapping = {
     "aouchiche": get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy,
     "third_ev": get_reward_third_eigenvalue,
     "fourth_ev": get_reward_fourth_eigenvalue,
+    "kth_eigenvalue": get_reward_kth_eigenvalue,
     "bollobas": get_reward_bollobas_nikiforov,
     "elphick_linz_wocjan": get_reward_Elphick_Linz_Wocjan,
     "elphick_wocjan": get_reward_Elphick_Wocjan,
