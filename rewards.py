@@ -4,7 +4,6 @@ import grinpy as gp
 from utils import (
     laplacian,
     signless_laplacian,
-    nb_components,
     min_square,
     make_graph,
     make_matrix,
@@ -98,7 +97,7 @@ def get_reward_third_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
-    return eigen_values[-3] - n / 3
+    return (1 + eigen_values[-3]) / n - 1 / 3
 
 
 def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
@@ -106,11 +105,11 @@ def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
     g = make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
     # return eigen_values[-4] - 0.269*n
-    if (1+eigen_values[-4])/n - (1+np.sqrt(5))/12 > EPSILON:
+    if (1 + eigen_values[-4]) / n - (1 + np.sqrt(5)) / 12 > EPSILON:
         print(g)
         print(state)
         exit(1)
-    return (1+eigen_values[-4])/n - (1+np.sqrt(5))/12
+    return (1 + eigen_values[-4]) / n - (1 + np.sqrt(5)) / 12
 
 
 def get_reward_kth_eigenvalue(state: np.ndarray, n: int, k: int) -> float:
@@ -118,32 +117,36 @@ def get_reward_kth_eigenvalue(state: np.ndarray, n: int, k: int) -> float:
     g = make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
 
-    VALUES = [x + EPSILON for x in [
-        1/3,
-        (1+math.sqrt(5))/12,
-        2/9,
-        1/5,
-        4/21,
-        5/28,
-        1/6,
-        7/45,
-        8/55,
-        3/22,
-        5/39,
-        11/91,
-        4/35,
-        4/36,
-        2/19,
-        2/19,
-        2/19,
-        13/125,
-        13/125,
-        13/126,
-        25/243,
-        56/552,
-    ]]
+    VALUES = [
+        x + EPSILON
+        for x in [
+            1 / 3,
+            (1 + math.sqrt(5)) / 12,
+            2 / 9,
+            1 / 5,
+            4 / 21,
+            5 / 28,
+            1 / 6,
+            7 / 45,
+            8 / 55,
+            3 / 22,
+            5 / 39,
+            11 / 91,
+            4 / 35,
+            4 / 36,
+            2 / 19,
+            2 / 19,
+            2 / 19,
+            13 / 125,
+            13 / 125,
+            13 / 126,
+            25 / 243,
+            56 / 552,
+        ]
+    ]
 
-    return eigen_values[-k]/n - VALUES[k-3]
+    return eigen_values[-k] / n - VALUES[k - 3]
+
 
 def get_reward_bollobas_nikiforov(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
@@ -180,15 +183,15 @@ def get_reward_Elphick_Wocjan(state: np.ndarray, n: int) -> float:
     eigen_values = np.linalg.eigvalsh(m)
     strictly_positive_eigenvalues = [x for x in eigen_values if x > EPSILON]
     clique_number = gp.clique_number(g)
-    if clique_number==0:
+    if clique_number == 0:
         return -INF
     somme = 0
     for x in range(len(strictly_positive_eigenvalues)):
         somme += strictly_positive_eigenvalues[x] * strictly_positive_eigenvalues[x]
-    if np.sqrt(somme) - n*(1 - 1/clique_number) > EPSILON:
+    if np.sqrt(somme) - n * (1 - 1 / clique_number) > EPSILON:
         print("Bingo elphick wocjan !")
         print(m)
-    return  np.sqrt(somme) - n*(1 - 1/clique_number)
+    return np.sqrt(somme) - n * (1 - 1 / clique_number)
 
 
 def get_reward_clique(state: np.ndarray, n: int) -> float:
@@ -205,47 +208,54 @@ def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
     Conjecture saying that Randic index can be lower bounded in terms of the graph radius.
     """
     import grinpy as gp
-    g = make_graph(state,n)
+
+    g = make_graph(state, n)
     if not nx.is_connected(g):
-        return -INF;
+        return -INF
     randic_index = gp.randic_index(g)
     radius = nx.radius(g)
     if radius - randic_index > EPSILON:
         print("bingo randic !")
         print(state)
-        print(make_graph(state,n))
+        print(make_graph(state, n))
         exit(1)
     return radius - randic_index
 
-def get_reward_difference_szeged_wiener(state: np.ndarray, n: int, k:int) -> float:
+
+def get_reward_difference_szeged_wiener(state: np.ndarray, n: int, k: int) -> float:
     """
     Difference between Szeged and Wiener index.
     """
-    g = make_graph(state,n)
-    for i in range(n-1):
-        g.add_edge(i,i+1)
-    g.add_edge(n-1,0)
+    g = make_graph(state, n)
+    for i in range(n - 1):
+        g.add_edge(i, i + 1)
+    g.add_edge(n - 1, 0)
 
     # if not nx.is_biconnected(g):
     #     return -INF
     distance_matrix = nx.floyd_warshall_numpy(g)
-    wiener_index = np.sum(distance_matrix)/2
-    szeged_index = 0;
+    wiener_index = np.sum(distance_matrix) / 2
+    szeged_index = 0
     for e in g.edges():
-        n0 = 0; n1 = 0;
+        n0 = 0
+        n1 = 0
         for i in range(n):
             if distance_matrix[e[0]][i] > distance_matrix[e[1]][i]:
                 n0 += 1
             elif distance_matrix[e[0]][i] < distance_matrix[e[1]][i]:
                 n1 += 1
-        szeged_index += n0 * n1;
-    if wiener_index == INF or -szeged_index + wiener_index == 0 or -szeged_index + wiener_index + 2*n == 6:
+        szeged_index += n0 * n1
+    if (
+        wiener_index == INF
+        or -szeged_index + wiener_index == 0
+        or -szeged_index + wiener_index + 2 * n == 6
+    ):
         return -INF
-    if -szeged_index + wiener_index + 2*n > EPSILON:
-            print("BINGO")
-            print(make_matrix(state,n))
-            exit(1)
-    return -szeged_index + wiener_index + 2*n;
+    if -szeged_index + wiener_index + 2 * n > EPSILON:
+        print("BINGO")
+        print(make_matrix(state, n))
+        exit(1)
+    return -szeged_index + wiener_index + 2 * n
 
 
 def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
@@ -255,12 +265,16 @@ def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
 
     maxDegree = 0
     minDegree = n
-    for i,d in g.degree():
+    for i, d in g.degree():
         if d > maxDegree:
             maxDegree = d
         if d < minDegree:
             minDegree = d
-    if minDegree == n-1 or n >= minDegree+maxDegree or 2*sum(state)+n*(n-1) >= (minDegree+maxDegree)^2:
+    if (
+        minDegree == n - 1
+        or n >= minDegree + maxDegree
+        or 2 * sum(state) + n * (n - 1) >= (minDegree + maxDegree) ^ 2
+    ):
         return -1000
 
     determinant = abs(np.linalg.det(m))
@@ -288,5 +302,5 @@ mapping = {
     "clique": get_reward_clique,
     "szeged_wiener": get_reward_difference_szeged_wiener,
     "akbari": get_reward_akbari_hosseinzadeh,
-    "randic": get_reward_randic_radius
+    "randic": get_reward_randic_radius,
 }
