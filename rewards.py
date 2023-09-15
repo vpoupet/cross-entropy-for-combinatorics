@@ -31,12 +31,22 @@ def get_reward_brouwer(state: np.ndarray, n: int) -> float:
 
 
 def get_reward_ashraf(state: np.ndarray, n: int) -> float:
-    t = 10
+    t = n//2
     g = make_matrix(state, n)
     l = signless_laplacian(g)
     eigen_values = np.linalg.eigvalsh(l)
     return sum(eigen_values[-t:]) - np.count_nonzero(state) - t * (t + 1) / 2
 
+
+def get_reward_ashraf_distance(state: np.ndarray, n: int) -> float:
+    # TODO: optimize the signless_laplacian
+    t = 3
+    g = make_graph(state, n)
+    if not nx.is_connected(g):
+        return -1000;
+    l = signless_laplacian(nx.floyd_warshall_numpy(g))
+    eigen_values = np.linalg.eigvalsh(l)
+    return sum(eigen_values[-t:]) - np.trace(l)/2 - (2*t-3)*t * (t + 1) / 2
 
 def get_reward_conj21(state: np.ndarray, n: int) -> float:
     """
@@ -207,8 +217,6 @@ def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
     """
     Conjecture saying that Randic index can be lower bounded in terms of the graph radius.
     """
-    import grinpy as gp
-
     g = make_graph(state, n)
     if not nx.is_connected(g):
         return -INF
@@ -222,17 +230,14 @@ def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
     return radius - randic_index
 
 
-def get_reward_difference_szeged_wiener(state: np.ndarray, n: int, k: int) -> float:
+def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
     """
     Difference between Szeged and Wiener index.
     """
     g = make_graph(state, n)
-    for i in range(n - 1):
-        g.add_edge(i, i + 1)
-    g.add_edge(n - 1, 0)
 
-    # if not nx.is_biconnected(g):
-    #     return -INF
+    if not nx.is_biconnected(g):
+        return -INF
     distance_matrix = nx.floyd_warshall_numpy(g)
     wiener_index = np.sum(distance_matrix) / 2
     szeged_index = 0
@@ -291,6 +296,7 @@ mapping = {
     "square": get_reward_square_eigenvalues,
     "brouwer": get_reward_brouwer,
     "ashraf": get_reward_ashraf,
+    "ashraf_distance": get_reward_ashraf_distance,
     "conj21": get_reward_conj21,
     "aouchiche": get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy,
     "third_ev": get_reward_third_eigenvalue,
