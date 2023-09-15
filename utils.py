@@ -15,11 +15,11 @@ def laplacian(m: np.ndarray[int]) -> np.ndarray[int]:
 
     The laplacian of a graph is defined as the difference between the degree matrix and the adjacency matrix.
     """
-
-    l = -m
-    for i in range(len(m)):
-        l[i, i] = m[i, :].sum()
-    return l
+    return -m + np.diag(m.sum(axis=0))
+    # l = -m
+    # for i in range(len(m)):
+    #     l[i, i] = m[i, :].sum()
+    # return l
 
 
 def signless_laplacian(m: np.ndarray[int]) -> np.ndarray[int]:
@@ -28,10 +28,11 @@ def signless_laplacian(m: np.ndarray[int]) -> np.ndarray[int]:
 
     The signless laplacian of a graph is defined as the sum of the degree matrix and the adjacency matrix.
     """
-    l = m[:, :]
-    for i in range(len(l)):
-        l[i, i] = m[i, :].sum()
-    return l
+    return m + np.diag(m.sum(axis=0))
+    # l = m[:, :]
+    # for i in range(len(l)):
+    #     l[i, i] = m[i, :].sum()
+    # return l
 
 
 def nb_components(m: np.ndarray[int]) -> int:
