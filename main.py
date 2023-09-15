@@ -8,8 +8,28 @@ import numpy.typing as npt
 import tensorflow as tf
 
 import rewards
+import utils
 
 INF = float("inf")
+
+
+def fake_states(initial_graph, improved_graph, nb_vertices):
+    graph_word_size = get_graph_word_size(nb_vertices)
+    states = []
+    current_graph = np.copy(initial_graph)
+    i = 0
+    j = 1
+    for k in range(len(improved_graph)):
+        state = np.append(current_graph, np.zeros((nb_vertices,)))
+        state[graph_word_size + i] = 1
+        state[graph_word_size + j] = 1
+        states.append(state)
+        j += 1
+        if j >= nb_vertices:
+            i += 1
+            j = i + 1
+        current_graph[k] = improved_graph[k]
+    return np.array(states)
 
 
 def get_graph_word_size(nb_vertices: int) -> int:
@@ -70,9 +90,7 @@ def run_batch(
             step_i = random.randrange(nb_vertices)
             step_j = (step_i + random.randrange(nb_vertices - 1)) % nb_vertices
             step_i, step_j = min(step_i, step_j), max(step_i, step_j)
-            step_k = (
-                nb_vertices * step_i - (step_i * (step_i + 1)) // 2 + step_j - step_i - 1
-            )
+            step_k = utils.k(step_i, step_j, nb_vertices)
 
         states[:, step, graph_word_size + step_i] = 1
         states[:, step, graph_word_size + step_j] = 1
@@ -105,7 +123,6 @@ def run(
     learning_rate: float,
     hidden_layer_neurons: List[int],
     output_file: str,
-    random_order: bool,
 ) -> None:
     """
     Runs the learning process
@@ -124,6 +141,9 @@ def run(
     nb_supers = int(batch_size * super_ratio)
     if game_length is None:
         game_length = nb_vertices * (nb_vertices - 1) // 2
+        random_order = False
+    else:
+        random_order = True
 
     best_reward: float = -INF
     start_time = time.time()
@@ -155,24 +175,53 @@ def run(
         rewards = np.append(rewards, super_rewards)
         graphs = np.append(graphs, super_graphs, axis=0)
 
-        # select elites (sessions to learn from)
-        indexes = np.argpartition(rewards, (-nb_elites, -nb_supers))
-        elite_indexes = indexes[-nb_elites:]
-        elite_states = states[elite_indexes].reshape(-1, state_size)
-        elite_actions = actions[elite_indexes].reshape(-1)
-
         # Compare best reward of this batch to the overall best reward
         batch_best_reward_index = np.argmax(rewards)
         batch_best_reward = rewards[batch_best_reward_index]
         if batch_best_reward > best_reward:
             best_reward = batch_best_reward
             best_graph = graphs[batch_best_reward_index]
-            with open(output_file, "a") as f:
-                f.write("".join(str(x) for x in best_graph) + "\n")
-                f.write(f"{best_reward} ({time.time() - start_time})\n\n")
+            if random_order:
+                with open(output_file, "a") as f:
+                    f.write("".join(str(x) for x in best_graph) + "\n")
+                    f.write(f"{best_reward} ({time.time() - start_time})\n\n")
+            else:
+                # try to improve the best graph
+                improved_best_graph, improved_best_reward = utils.improve_graph(
+                    best_graph, nb_vertices, get_reward
+                )
+                with open(output_file, "a") as f:
+                    f.write("".join(str(x) for x in improved_best_graph) + "\n")
+                    f.write(f"{improved_best_reward} ({time.time() - start_time})\n\n")
+                if improved_best_reward > best_reward:
+                    print(
+                        f"** Improved best reward : {best_reward} -> {improved_best_reward}**"
+                    )
+                    # insert the new best graph
+                    states = np.append(
+                        states,
+                        [
+                            fake_states(
+                                graphs[batch_best_reward_index],
+                                improved_best_graph,
+                                nb_vertices,
+                            )
+                        ],
+                        axis=0,
+                    )
+                    actions = np.append(
+                        actions,
+                        [improved_best_graph],
+                        axis=0,
+                    )
+                    rewards = np.append(rewards, [improved_best_reward])
+                    graphs = np.append(graphs, [improved_best_graph], axis=0)
 
-        model.fit(elite_states, elite_actions)
-        tf.keras.backend.clear_session()  # to mitigate memory leak
+        # select elites (sessions to learn from)
+        indexes = np.argpartition(rewards, (-nb_elites, -nb_supers))
+        elite_indexes = indexes[-nb_elites:]
+        elite_states = states[elite_indexes].reshape(-1, state_size)
+        elite_actions = actions[elite_indexes].reshape(-1)
 
         best_graphs = graphs[elite_indexes]
 
@@ -182,6 +231,9 @@ def run(
         super_actions = actions[super_indexes]
         super_rewards = rewards[super_indexes]
         super_graphs = graphs[super_indexes]
+
+        model.fit(elite_states, elite_actions)
+        tf.keras.backend.clear_session()  # to mitigate memory leak
 
         # evaluate mean reward
         mean_all_reward = np.mean(rewards)
@@ -256,12 +308,6 @@ if __name__ == "__main__":
         default=[128, 64, 4],
         help="number of neurons in the model hidden layers",
     )
-    parser.add_argument(
-        "--random-order",
-        action="store_true",
-        help="randomize the order of edges in each game",
-        default=False,
-    )
 
     args = parser.parse_args()
 
@@ -276,5 +322,4 @@ if __name__ == "__main__":
         hidden_layer_neurons=args.hidden_layers,
         output_file=args.output_file,
         get_reward=get_reward,
-        random_order=args.random_order,
     )

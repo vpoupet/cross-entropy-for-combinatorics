@@ -10,6 +10,10 @@ def get_nb_vertices(nb_edges: int) -> int:
     return int((1 + np.sqrt(1 + 8 * nb_edges)) / 2)
 
 
+def k(i, j, n):
+    return n * i - (i * (i + 1)) // 2 + j - i - 1
+
+
 def laplacian(m: np.ndarray[int]) -> np.ndarray[int]:
     """Returns the laplacian of a graph given by its adjacency matrix.
 
