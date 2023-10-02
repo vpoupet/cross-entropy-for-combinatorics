@@ -1,6 +1,11 @@
+from typing import Any
+
 import numpy as np
 import networkx as nx
 import grinpy as gp
+from numpy import ndarray, dtype, floating, float_
+from numpy._typing import _64Bit
+
 from utils import (
     laplacian,
     signless_laplacian,
@@ -10,7 +15,6 @@ from utils import (
     EPSILON,
 )
 import math
-
 
 INF = float("inf")
 
@@ -31,7 +35,7 @@ def get_reward_brouwer(state: np.ndarray, n: int) -> float:
 
 
 def get_reward_ashraf(state: np.ndarray, n: int) -> float:
-    t = n//2
+    t = n // 2
     g = make_matrix(state, n)
     l = signless_laplacian(g)
     eigen_values = np.linalg.eigvalsh(l)
@@ -46,7 +50,8 @@ def get_reward_ashraf_distance(state: np.ndarray, n: int) -> float:
         return -1000;
     l = signless_laplacian(nx.floyd_warshall_numpy(g))
     eigen_values = np.linalg.eigvalsh(l)
-    return sum(eigen_values[-t:]) - np.trace(l)/2 - (2*t-3)*t * (t + 1) / 2
+    return sum(eigen_values[-t:]) - np.trace(l) / 2 - (2 * t - 3) * t * (t + 1) / 2
+
 
 def get_reward_conj21(state: np.ndarray, n: int) -> float:
     """
@@ -91,7 +96,7 @@ def get_reward_conj21(state: np.ndarray, n: int) -> float:
 
 
 def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
-    state: np.ndarray, n: int
+        state: np.ndarray, n: int
 ) -> float:
     g = make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
@@ -106,7 +111,7 @@ def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
 def get_reward_third_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = make_matrix(state, n)
-    eigen_values = np.linalg.eigvalsh(g)
+    eigen_values: ndarray[float] = np.linalg.eigvalsh(g)
     return (1 + eigen_values[-3]) / n - 1 / 3
 
 
@@ -165,9 +170,9 @@ def get_reward_bollobas_nikiforov(state: np.ndarray, n: int) -> float:
     eigen_values = np.linalg.eigvalsh(m)
     clique_number = gp.clique_number(g)
     return (
-        -2.0 * np.sum(state) * (clique_number - 1) / clique_number
-        + eigen_values[-1] * eigen_values[-1]
-        + eigen_values[-2] * eigen_values[-2]
+            -2.0 * np.sum(state) * (clique_number - 1) / clique_number
+            + eigen_values[-1] * eigen_values[-1]
+            + eigen_values[-2] * eigen_values[-2]
     )
 
 
@@ -232,7 +237,8 @@ def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
 
 def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
     """
-    Difference between Szeged and Wiener index.
+    Difference between Szeged and Wiener index. The conjecture of Bonamy, Pinlou, Luzar, Skrekovski says that it is
+    2*n, when n>=10. But the extremal values seem to give 3*n-10
     """
     g = make_graph(state, n)
 
@@ -251,9 +257,9 @@ def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
                 n1 += 1
         szeged_index += n0 * n1
     if (
-        wiener_index == INF
-        or -szeged_index + wiener_index == 0
-        or -szeged_index + wiener_index + 2 * n == 6
+            wiener_index == INF
+            or -szeged_index + wiener_index == 0
+            or -szeged_index + wiener_index + 2 * n == 6
     ):
         return -INF
     if -szeged_index + wiener_index + 2 * n > EPSILON:
@@ -261,6 +267,32 @@ def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
         print(make_matrix(state, n))
         exit(1)
     return -szeged_index + wiener_index + 2 * n
+
+
+def get_reward_wiener_line_graph_over_winer(state: np.ndarray, n: int) -> float:
+    """
+    Find a graph non-isomorphic to K_n s.t. W(L^k(G))/W(G) beats the case when G=K_n
+    """
+    g = make_graph(state, n)
+
+    if not nx.is_connected(g):
+        return -INF
+    wiener_index = nx.wiener_index(g)
+    g = nx.line_graph(nx.line_graph(g))
+    wiener_index_line = nx.wiener_index(g)
+    return wiener_index_line / wiener_index - 3172
+
+
+def get_reward_wiener_line_graph(state: np.ndarray, n: int) -> float:
+    """
+    Find a graph non-isomorphic to K_n s.t. W(L^k(G))/W(G) beats the case when G=K_n
+    """
+    g = make_graph(state, n)
+
+    if not nx.is_connected(g):
+        return -INF
+    wiener_index = nx.wiener_index(nx.line_graph(g))
+    return wiener_index
 
 
 def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
@@ -276,9 +308,9 @@ def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
         if d < minDegree:
             minDegree = d
     if (
-        minDegree == n - 1
-        or n >= minDegree + maxDegree
-        or 2 * sum(state) + n * (n - 1) >= (minDegree + maxDegree) ^ 2
+            minDegree == n - 1
+            or n >= minDegree + maxDegree
+            or 2 * sum(state) + n * (n - 1) >= (minDegree + maxDegree) ^ 2
     ):
         return -1000
 
@@ -309,4 +341,6 @@ mapping = {
     "szeged_wiener": get_reward_difference_szeged_wiener,
     "akbari": get_reward_akbari_hosseinzadeh,
     "randic": get_reward_randic_radius,
+    "wiener_line": get_reward_wiener_line_graph,
+    "wiener_line_over_wiener": get_reward_wiener_line_graph_over_winer
 }
