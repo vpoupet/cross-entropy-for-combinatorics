@@ -18,6 +18,7 @@ import math
 
 INF = float("inf")
 
+FOURTH_EIGENVALUE_RATIO = (1 + np.sqrt(5)) / 12
 
 def get_reward_square_eigenvalues(state: np.ndarray, n: int) -> float:
     g = make_graph(state, n)
@@ -120,11 +121,14 @@ def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
     g = make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
     # return eigen_values[-4] - 0.269*n
-    if (1 + eigen_values[-4]) / n - (1 + np.sqrt(5)) / 12 > EPSILON:
-        print(g)
-        print(state)
-        exit(1)
-    return (1 + eigen_values[-4]) / n - (1 + np.sqrt(5)) / 12
+    return (1+eigen_values[-4])/n - FOURTH_EIGENVALUE_RATIO
+
+
+def get_reward_eighth_eigenvalue(state: np.ndarray, n: int) -> float:
+    # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
+    g = make_matrix(state, n)
+    eigen_values = np.linalg.eigvalsh(g)
+    return (1+eigen_values[-8])/n - 5/28.
 
 
 def get_reward_kth_eigenvalue(state: np.ndarray, n: int, k: int) -> float:
@@ -136,7 +140,7 @@ def get_reward_kth_eigenvalue(state: np.ndarray, n: int, k: int) -> float:
         x + EPSILON
         for x in [
             1 / 3,
-            (1 + math.sqrt(5)) / 12,
+            FOURTH_EIGENVALUE_RATIO,
             2 / 9,
             1 / 5,
             4 / 21,
@@ -333,6 +337,7 @@ mapping = {
     "aouchiche": get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy,
     "third_ev": get_reward_third_eigenvalue,
     "fourth_ev": get_reward_fourth_eigenvalue,
+    "eighth_ev": get_reward_eighth_eigenvalue,
     "kth_eigenvalue": get_reward_kth_eigenvalue,
     "bollobas": get_reward_bollobas_nikiforov,
     "elphick_linz_wocjan": get_reward_Elphick_Linz_Wocjan,
