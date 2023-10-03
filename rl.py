@@ -3,11 +3,13 @@ from contextlib import suppress
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
-from stable_baselines3 import DQN
+import stable_baselines3 as sb3
+import sb3_contrib
 from stable_baselines3.common import env_checker
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.dqn import MlpPolicy
+# from stable_baselines3.dqn import MlpPolicy
+from stable_baselines3.ppo import MlpPolicy
 
 import rewards
 
@@ -35,9 +37,18 @@ class GraphEnv(gym.Env):
         self.position = 0
         self.i = 0
         self.j = 1
-        self.model_name = model_name
         self.observation_space = spaces.MultiBinary(self.nb_edges + self.nb_vertices)
         self.action_space = spaces.Discrete(2)
+        self.model_name = model_name
+        self.make_model()
+        self.partial_reward = 0
+
+    def make_model(self):
+        model_class = sb3.DQN
+        try:
+            self.model = model_class.load(self.model_name, env=self)
+        except FileNotFoundError:
+            self.model = model_class("MlpPolicy", self, verbose=1)
 
     def get_observation(self):
         obs = np.append(self.graph, np.zeros(self.nb_vertices, dtype=np.int8))
@@ -56,6 +67,10 @@ class GraphEnv(gym.Env):
         if self.get_terminated():
             return self.reward(self.graph, self.nb_vertices)
         return 0
+        # reward = self.reward(self.graph, self.nb_vertices)
+        # step_reward = reward - self.partial_reward
+        # self.partial_reward = reward
+        # return step_reward
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -63,6 +78,7 @@ class GraphEnv(gym.Env):
         self.position = 0
         self.i = 0
         self.j = 1
+        self.partial_reward = 0
         return self.get_observation(), self.get_info()
 
     def step(self, action):
@@ -90,30 +106,39 @@ class GraphEnv(gym.Env):
         self.reset()
         return env_checker.check_env(self, warn=True)
 
-    def play(self):
-        obs, _ = self.reset()
-        done = False
-        model = DQN.load(self.model_name, env=self)
-        while not done:
-            action, _ = model.predict(obs)
-            obs, reward, done, _, _ = self.step(action)
-        return self.graph, reward
-    
-    def learn(self, total_timesteps=1e5, learning_rate=0.0001):
-        model = DQN(MlpPolicy, self, verbose=1, learning_rate=learning_rate)
-        model.learn(total_timesteps=total_timesteps, callback=CustomCallback(self.model_name))
+    def play(self, nb_plays=1):
+        results = []
+        for _ in range(nb_plays):
+            obs, _ = self.reset()
+            done = False
+            while not done:
+                action, _ = self.model.predict(obs, deterministic=True)
+                obs, reward, done, _, _ = self.step(action)
+            results.append((self.graph, reward))
+        return results
 
-        model.save(self.model_name)
-        mean_reward, std = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
+    def learn(self, total_timesteps=1e5):
+        self.model.learn(
+            total_timesteps=total_timesteps, callback=CustomCallback(self.model_name)
+        )
+
+        self.model.save(self.model_name)
+        mean_reward, std = evaluate_policy(self.model, self.model.get_env(), n_eval_episodes=10)
         print(f"Mean reward: {mean_reward}, Std. deviation: {std}")
 
 
 def main():
-    env = GraphEnv(reward=rewards.get_reward_conj21, nb_vertices=20, model_name="model_conj21_20", )
-    env.learn(total_timesteps=1e8)
+    env = GraphEnv(
+        reward=rewards.get_reward_randic_radius,
+        nb_vertices=12,
+        model_name="model_randic_DQN_12",
+    )
+    # env.learn(total_timesteps=1e7)
+    results = env.play(100)
+    i = np.argmax([r for _, r in results])
+    print(results[i])
 
 
 if __name__ == "__main__":
     # check_env()
     main()
-
