@@ -5,12 +5,15 @@ from typing import Callable, List, Tuple
 
 import numpy as np
 import numpy.typing as npt
+import tensorboardX
 import tensorflow as tf
+import matplotlib.pyplot as plt
+import networkx as nx
 
 import rewards
 import utils
 
-INF = float("inf")
+INF = 1000
 
 
 def fake_states(initial_graph, improved_graph, nb_vertices):
@@ -69,6 +72,7 @@ def run_batch(
     best_graphs: npt.NDArray,
     get_reward: Callable[[npt.NDArray, int], float],
     random_order: bool,
+    action_randomness_epsilon: float = 0,
 ) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
     graph_word_size = get_graph_word_size(nb_vertices)
     state_size = get_state_size(nb_vertices)
@@ -96,6 +100,8 @@ def run_batch(
         states[:, step, graph_word_size + step_j] = 1
 
         prob = model(states[:, step, :]).numpy()
+        prob = np.clip(prob, action_randomness_epsilon, 1-action_randomness_epsilon)
+
         step_actions = (np.random.random(size=(batch_size,)) < prob[:, 0]).astype(int)
         actions[:, step] = step_actions
         # update graphs
@@ -158,6 +164,10 @@ def run(
     best_graphs = np.random.randint(2, size=(batch_size, graph_word_size))
     iteration = 0
 
+    steps_since_last_improvement = 0
+    action_randomness_epsilon = .01
+
+    writer = tensorboardX.SummaryWriter()
     while True:
         # generate new sessions
         tic = time.time()
@@ -169,6 +179,7 @@ def run(
             best_graphs,
             get_reward,
             random_order,
+            action_randomness_epsilon,
         )
         states = np.append(states, super_states, axis=0)
         actions = np.append(actions, super_actions, axis=0)
@@ -216,6 +227,22 @@ def run(
                     )
                     rewards = np.append(rewards, [improved_best_reward])
                     graphs = np.append(graphs, [improved_best_graph], axis=0)
+            plt.figure(num=1, figsize=(4,4), dpi=300)
+            nx.draw_kamada_kawai(utils.make_graph(best_graph, nb_vertices), node_size=80)
+            writer.add_figure('best graph', plt.figure(num=1), iteration)
+            writer.add_text('best matrix', repr(best_graph[:graph_word_size]), iteration)
+            plt.close()
+            writer.flush()
+
+            steps_since_last_improvement = 0
+            action_randomness_epsilon = .01
+        else:
+            steps_since_last_improvement += 1
+            if steps_since_last_improvement > 10:
+                action_randomness_epsilon *= 1.2
+                steps_since_last_improvement = 0
+                action_randomness_epsilon = min(action_randomness_epsilon, .1)
+            
 
         # select elites (sessions to learn from)
         indexes = np.argpartition(rewards, (-nb_elites, -nb_supers))
@@ -243,11 +270,14 @@ def run(
         print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
         print()
         iteration += 1
+        writer.add_scalar("mean_reward", mean_all_reward, iteration)
+        writer.add_scalar("best_reward", best_reward, iteration)
+        writer.add_scalar("action randomness", action_randomness_epsilon, iteration)
+        writer.flush()
 
-        if iteration % 50 == 0:
-            # save model every 50 iterations
-            model.save("./model.keras")
-
+        # if iteration % 50 == 0:
+        #     # save model every 50 iterations
+        #     model.save("./model.keras")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -279,7 +309,7 @@ if __name__ == "__main__":
         "--learning-rate",
         "-l",
         type=float,
-        default=0.0001,
+        default=0.0005,
         help="learning rate of the model. Increase this to make convergence faster, decrease if the algorithm gets stuck in local optima too often.",
     )
     parser.add_argument(
@@ -292,20 +322,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--elite-ratio",
         type=float,
-        default=0.07,
+        default=0.1,
         help="ratio of best instances we are learning from",
     )
     parser.add_argument(
         "--super-ratio",
         type=float,
-        default=0.06,
+        default=0.05,
         help="ratio of best instances that survive to the next iteration",
     )
     parser.add_argument(
         "--hidden-layers",
         type=int,
         nargs="+",
-        default=[128, 64, 4],
+        default=[128, 32],
         help="number of neurons in the model hidden layers",
     )
 

@@ -16,7 +16,7 @@ from utils import (
 )
 import math
 
-INF = float("inf")
+INF = 1000
 
 FOURTH_EIGENVALUE_RATIO = (1 + np.sqrt(5)) / 12
 
