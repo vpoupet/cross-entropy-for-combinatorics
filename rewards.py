@@ -222,11 +222,28 @@ def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
     randic_index = utils.randic_index(g)
     radius = nx.radius(g)
     if radius - randic_index > utils.EPSILON:
-        print("bingo randic !")
+        print("bingo randic and radius !")
         print(state)
         print(utils.make_graph(state, n))
         exit(1)
     return radius - randic_index
+
+
+def get_reward_randic_mean_distance(state: np.ndarray, n: int) -> float:
+    """
+    Conjecture saying that Randic index can be lower bounded in terms of the graph mean distance (Caporossin and Hansen, Discret Math. 2000).
+    """
+    g = utils.make_graph(state, n)
+    if not nx.is_connected(g):
+        return -INF
+    randic_index = utils.randic_index(g)
+    mean_distance = nx.average_shortest_path_length(g)
+    if mean_distance - randic_index + math.sqrt(n-1)-2*(1-1/n) > utils.EPSILON:
+        print("bingo randic and mean distance !")
+        print(state)
+        print(utils.make_graph(state, n))
+        exit(1)
+    return mean_distance - randic_index
 
 
 def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
@@ -317,6 +334,14 @@ def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
         print(m)
     return minDegree + maxDegree - somme
 
+# This is not discrete, so not a good reward function
+def get_reward_planar_girth_independent_set(state: np.ndarray, n: int) -> float:
+    g = utils.make_graph(state, n)
+    m = utils.make_matrix(state, n)
+
+    if not nx.is_connected(g) or nx.girth(g) < 7 and not nx.is_planar(g):
+        return -INF
+    return n / nx.maximal_independent_set(g)
 
 mapping = {
     "square": get_reward_square_eigenvalues,
@@ -335,7 +360,9 @@ mapping = {
     "clique": get_reward_clique,
     "szeged_wiener": get_reward_difference_szeged_wiener,
     "akbari": get_reward_akbari_hosseinzadeh,
-    "randic": get_reward_randic_radius,
+    "randic_radius": get_reward_randic_radius,
+    "randic_mean_distance": get_reward_randic_mean_distance,
     "wiener_line": get_reward_wiener_line_graph,
-    "wiener_line_over_wiener": get_reward_wiener_line_graph_over_winer
+    "wiener_line_over_wiener": get_reward_wiener_line_graph_over_winer,
+    "planar_girth_independent_set": get_reward_planar_girth_independent_set,
 }
