@@ -1,6 +1,8 @@
-import numpy as np
-import networkx as nx
+import functools
+import math
 
+import networkx as nx
+import numpy as np
 
 EPSILON = 1e-10
 INF = float("inf")
@@ -114,3 +116,48 @@ def improve_graph(state, n, reward_function):
         return improve_graph(best_state, n, reward_function)
     else:
         return best_state, best_reward
+
+
+# from networkx documentation
+def clique_number(g):
+    """Returns the clique number of the graph.
+
+    The clique number of a graph is the size of the largest clique in the graph."""
+    return max(len(c) for c in nx.find_cliques(g))
+
+
+# from grinpy source code
+def _topological_index(G, func):
+    """Return the topological index of ``G`` determined by ``func``"""
+
+    return math.fsum(func(*edge) for edge in G.edges())
+
+
+# from grinpy source code
+def randic_index(G):
+    r"""Returns the Randić Index of the graph ``G``.
+
+    The *Randić index* of a graph *G* with edge set *E* is defined as the
+    following sum:
+
+    .. math::
+        \sum_{vw \in E} \frac{1}{\sqrt{d_G(v) \times d_G(w)}}
+
+    Parameters
+    ----------
+    G : NetworkX graph
+        An undirected graph.
+
+    Returns
+    -------
+    float
+        The Randić Index of a ``G``.
+
+    References
+    ----------
+
+    Ivan Gutman, Degree-Based Topological Indices, Croat. Chem. Acta 86 (4)
+    (2013) 351-361. http://dx.doi.org/10.5562/cca2294
+    """
+    _degree = functools.partial(nx.degree, G)
+    return _topological_index(G, func=lambda x, y: 1 / math.sqrt(_degree(x) * _degree(y)))

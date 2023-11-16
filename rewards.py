@@ -1,44 +1,34 @@
+import math
 from typing import Any
 
-import numpy as np
 import networkx as nx
-import grinpy as gp
-from numpy import ndarray, dtype, floating, float_
-from numpy._typing import _64Bit
+import numpy as np
 
-from utils import (
-    laplacian,
-    signless_laplacian,
-    min_square,
-    make_graph,
-    make_matrix,
-    EPSILON,
-)
-import math
+import utils
 
 INF = 1000
 
 FOURTH_EIGENVALUE_RATIO = (1 + np.sqrt(5)) / 12
 
 def get_reward_square_eigenvalues(state: np.ndarray, n: int) -> float:
-    g = make_graph(state, n)
+    g = utils.make_graph(state, n)
     if nx.number_connected_components(g) > 1:
         return -INF
-    return n - 1 - min_square(g)
+    return n - 1 - utils.min_square(g)
 
 
 def get_reward_brouwer(state: np.ndarray, n: int) -> float:
     t = 10
-    g = make_matrix(state, n)
-    l = laplacian(g)
+    g = utils.make_matrix(state, n)
+    l = utils.laplacian(g)
     eigen_values = np.linalg.eigvalsh(l)
     return sum(eigen_values[-t:]) - np.count_nonzero(state) - t * (t + 1) / 2
 
 
 def get_reward_ashraf(state: np.ndarray, n: int) -> float:
     t = n // 2
-    g = make_matrix(state, n)
-    l = signless_laplacian(g)
+    g = utils.make_matrix(state, n)
+    l = utils.signless_laplacian(g)
     eigen_values = np.linalg.eigvalsh(l)
     return sum(eigen_values[-t:]) - np.count_nonzero(state) - t * (t + 1) / 2
 
@@ -46,10 +36,10 @@ def get_reward_ashraf(state: np.ndarray, n: int) -> float:
 def get_reward_ashraf_distance(state: np.ndarray, n: int) -> float:
     # TODO: optimize the signless_laplacian
     t = 3
-    g = make_graph(state, n)
+    g = utils.make_graph(state, n)
     if not nx.is_connected(g):
         return -1000;
-    l = signless_laplacian(nx.floyd_warshall_numpy(g))
+    l = utils.signless_laplacian(nx.floyd_warshall_numpy(g))
     eigen_values = np.linalg.eigvalsh(l)
     return sum(eigen_values[-t:]) - np.trace(l) / 2 - (2 * t - 3) * t * (t + 1) / 2
 
@@ -72,7 +62,7 @@ def get_reward_conj21(state: np.ndarray, n: int) -> float:
     # Finds the counterexample some 30% (?) of the time with these parameters, but you can run several instances in parallel.
 
     # Construct the graph
-    g = make_graph(state, n)
+    g = utils.make_graph(state, n)
 
     # g is assumed to be connected in the conjecture. If it isn't, return a very negative reward.
     if not (nx.is_connected(g)):
@@ -99,10 +89,10 @@ def get_reward_conj21(state: np.ndarray, n: int) -> float:
 def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
         state: np.ndarray, n: int
 ) -> float:
-    g = make_matrix(state, n)
+    g = utils.make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
-    strictly_positive_eigenvalues = [x for x in eigen_values if x > EPSILON]
-    strictly_negative_eigenvalues = [x for x in eigen_values if x < -EPSILON]
+    strictly_positive_eigenvalues = [x for x in eigen_values if x > utils.EPSILON]
+    strictly_negative_eigenvalues = [x for x in eigen_values if x < -utils.EPSILON]
 
     return -sum(strictly_positive_eigenvalues) + max(
         len(strictly_positive_eigenvalues), len(strictly_negative_eigenvalues)
@@ -111,14 +101,14 @@ def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
 
 def get_reward_third_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
-    g = make_matrix(state, n)
-    eigen_values: ndarray[float] = np.linalg.eigvalsh(g)
+    g = utils.make_matrix(state, n)
+    eigen_values = np.linalg.eigvalsh(g)
     return (1 + eigen_values[-3]) / n - 1 / 3
 
 
 def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
-    g = make_matrix(state, n)
+    g = utils.make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
     # return eigen_values[-4] - 0.269*n
     return (1+eigen_values[-4])/n - FOURTH_EIGENVALUE_RATIO
@@ -126,18 +116,18 @@ def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
 
 def get_reward_eighth_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
-    g = make_matrix(state, n)
+    g = utils.make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
     return (1+eigen_values[-8])/n - 5/28.
 
 
 def get_reward_kth_eigenvalue(state: np.ndarray, n: int, k: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
-    g = make_matrix(state, n)
+    g = utils.make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
 
     VALUES = [
-        x + EPSILON
+        x + utils.EPSILON
         for x in [
             1 / 3,
             FOURTH_EIGENVALUE_RATIO,
@@ -169,10 +159,10 @@ def get_reward_kth_eigenvalue(state: np.ndarray, n: int, k: int) -> float:
 
 def get_reward_bollobas_nikiforov(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
-    m = make_matrix(state, n)
-    g = make_graph(state, n)
+    m = utils.make_matrix(state, n)
+    g = utils.make_graph(state, n)
     eigen_values = np.linalg.eigvalsh(m)
-    clique_number = gp.clique_number(g)
+    clique_number = utils.clique_number(g)
     return (
             -2.0 * np.sum(state) * (clique_number - 1) / clique_number
             + eigen_values[-1] * eigen_values[-1]
@@ -182,11 +172,11 @@ def get_reward_bollobas_nikiforov(state: np.ndarray, n: int) -> float:
 
 def get_reward_Elphick_Linz_Wocjan(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
-    m = make_matrix(state, n)
-    g = make_graph(state, n)
+    m = utils.make_matrix(state, n)
+    g = utils.make_graph(state, n)
     eigen_values = np.linalg.eigvalsh(m)
-    strictly_positive_eigenvalues = [x for x in eigen_values if x > EPSILON]
-    clique_number = gp.clique_number(g)
+    strictly_positive_eigenvalues = [x for x in eigen_values if x > utils.EPSILON]
+    clique_number = utils.clique_number(g)
     l = min(len(strictly_positive_eigenvalues), clique_number)
     somme = 0
     for x in range(l):
@@ -196,18 +186,18 @@ def get_reward_Elphick_Linz_Wocjan(state: np.ndarray, n: int) -> float:
 
 def get_reward_Elphick_Wocjan(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2101.05229.pdf
-    m = make_matrix(state, n)
-    g = make_graph(state, n)
+    m = utils.make_matrix(state, n)
+    g = utils.make_graph(state, n)
     degree_sequence = [d for n, d in g.degree()]
     eigen_values = np.linalg.eigvalsh(m)
-    strictly_positive_eigenvalues = [x for x in eigen_values if x > EPSILON]
-    clique_number = gp.clique_number(g)
+    strictly_positive_eigenvalues = [x for x in eigen_values if x > utils.EPSILON]
+    clique_number = utils.clique_number(g)
     if clique_number == 0:
         return -INF
     somme = 0
     for x in range(len(strictly_positive_eigenvalues)):
         somme += strictly_positive_eigenvalues[x] * strictly_positive_eigenvalues[x]
-    if np.sqrt(somme) - n * (1 - 1 / clique_number) > EPSILON:
+    if np.sqrt(somme) - n * (1 - 1 / clique_number) > utils.EPSILON:
         print("Bingo elphick wocjan !")
         print(m)
     return np.sqrt(somme) - n * (1 - 1 / clique_number)
@@ -226,15 +216,15 @@ def get_reward_randic_radius(state: np.ndarray, n: int) -> float:
     """
     Conjecture saying that Randic index can be lower bounded in terms of the graph radius.
     """
-    g = make_graph(state, n)
+    g = utils.make_graph(state, n)
     if not nx.is_connected(g):
         return -INF
-    randic_index = gp.randic_index(g)
+    randic_index = utils.randic_index(g)
     radius = nx.radius(g)
-    if radius - randic_index > EPSILON:
+    if radius - randic_index > utils.EPSILON:
         print("bingo randic !")
         print(state)
-        print(make_graph(state, n))
+        print(utils.make_graph(state, n))
         exit(1)
     return radius - randic_index
 
@@ -244,7 +234,7 @@ def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
     Difference between Szeged and Wiener index. The conjecture of Bonamy, Pinlou, Luzar, Skrekovski says that it is
     2*n, when n>=10. But the extremal values seem to give 3*n-10
     """
-    g = make_graph(state, n)
+    g = utils.make_graph(state, n)
 
     if not nx.is_biconnected(g):
         return -INF
@@ -266,9 +256,9 @@ def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
             or -szeged_index + wiener_index + 2 * n == 6
     ):
         return -INF
-    if -szeged_index + wiener_index + 2 * n > EPSILON:
+    if -szeged_index + wiener_index + 2 * n > utils.EPSILON:
         print("BINGO")
-        print(make_matrix(state, n))
+        print(utils.make_matrix(state, n))
         exit(1)
     return -szeged_index + wiener_index + 2 * n
 
@@ -277,7 +267,7 @@ def get_reward_wiener_line_graph_over_winer(state: np.ndarray, n: int) -> float:
     """
     Find a graph non-isomorphic to K_n s.t. W(L^k(G))/W(G) beats the case when G=K_n
     """
-    g = make_graph(state, n)
+    g = utils.make_graph(state, n)
 
     if not nx.is_connected(g):
         return -INF
@@ -291,7 +281,7 @@ def get_reward_wiener_line_graph(state: np.ndarray, n: int) -> float:
     """
     Find a graph non-isomorphic to K_n s.t. W(L^k(G))/W(G) beats the case when G=K_n
     """
-    g = make_graph(state, n)
+    g = utils.make_graph(state, n)
 
     if not nx.is_connected(g):
         return -INF
@@ -301,8 +291,8 @@ def get_reward_wiener_line_graph(state: np.ndarray, n: int) -> float:
 
 def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
-    g = make_graph(state, n)
-    m = make_matrix(state, n)
+    g = utils.make_graph(state, n)
+    m = utils.make_matrix(state, n)
 
     maxDegree = 0
     minDegree = n
@@ -320,10 +310,10 @@ def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
 
     determinant = abs(np.linalg.det(m))
     eigen_vals = np.linalg.eigvalsh(m)
-    if determinant <= EPSILON or abs(determinant) >= eigen_vals[-1]:
+    if determinant <= utils.EPSILON or abs(determinant) >= eigen_vals[-1]:
         return -1000
     somme = sum(abs(eigen_vals))
-    if minDegree + maxDegree - somme > EPSILON:
+    if minDegree + maxDegree - somme > utils.EPSILON:
         print(m)
     return minDegree + maxDegree - somme
 
