@@ -1,5 +1,4 @@
 import argparse
-import random
 import time
 from typing import Callable, List, Tuple
 
@@ -14,25 +13,6 @@ import rewards
 import utils
 
 INF = 1000
-
-
-def fake_states(initial_graph, improved_graph, nb_vertices):
-    graph_word_size = get_graph_word_size(nb_vertices)
-    states = []
-    current_graph = np.copy(initial_graph)
-    i = 0
-    j = 1
-    for k in range(len(improved_graph)):
-        state = np.append(current_graph, np.zeros((nb_vertices,)))
-        state[graph_word_size + i] = 1
-        state[graph_word_size + j] = 1
-        states.append(state)
-        j += 1
-        if j >= nb_vertices:
-            i += 1
-            j = i + 1
-        current_graph[k] = improved_graph[k]
-    return np.array(states)
 
 
 def get_graph_word_size(nb_vertices: int) -> int:
@@ -66,12 +46,10 @@ def make_model(
 
 def run_batch(
     nb_vertices: int,
-    game_length: int,
     model: tf.keras.Model,
     batch_size: int,
     best_graphs: npt.NDArray,
     get_reward: Callable[[npt.NDArray, int], float],
-    random_order: bool,
     action_randomness_epsilon: float = 0,
 ) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
     graph_word_size = get_graph_word_size(nb_vertices)
@@ -80,39 +58,30 @@ def run_batch(
     graphs = np.repeat(best_graphs, batch_size // len(best_graphs), axis=0)
     graphs = np.append(graphs, best_graphs[: batch_size % len(best_graphs)], axis=0)
 
-    states = np.zeros((batch_size, game_length, state_size), dtype=int)
-    actions = np.zeros((batch_size, game_length), dtype=int)
+    states = np.zeros((batch_size, graph_word_size, state_size), dtype=int)
+    actions = np.zeros((batch_size, graph_word_size), dtype=int)
 
-    if not random_order:
-        step_i = 0
-        step_j = 1
-        step_k = 0
-    for step in range(game_length):
+    step_i = 0
+    step_j = 1
+    step_k = 0
+    for step in range(graph_word_size):
         states[:, step, :graph_word_size] = graphs
-        if random_order:
-            # pick a random edge
-            step_i = random.randrange(nb_vertices)
-            step_j = (step_i + random.randrange(nb_vertices - 1)) % nb_vertices
-            step_i, step_j = min(step_i, step_j), max(step_i, step_j)
-            step_k = utils.k(step_i, step_j, nb_vertices)
-
         states[:, step, graph_word_size + step_i] = 1
         states[:, step, graph_word_size + step_j] = 1
 
         prob = model(states[:, step, :]).numpy()
-        prob = np.clip(prob, action_randomness_epsilon, 1-action_randomness_epsilon)
+        prob = np.clip(prob, action_randomness_epsilon, 1 - action_randomness_epsilon)
 
         step_actions = (np.random.random(size=(batch_size,)) < prob[:, 0]).astype(int)
         actions[:, step] = step_actions
         # update graphs
         graphs[:, step_k] = step_actions
 
-        if not random_order:
-            step_j += 1
-            if step_j == nb_vertices:
-                step_i += 1
-                step_j = step_i + 1
-            step_k += 1
+        step_j += 1
+        if step_j == nb_vertices:
+            step_i += 1
+            step_j = step_i + 1
+        step_k += 1
 
     rewards = np.apply_along_axis(get_reward, 1, graphs, nb_vertices)
 
@@ -121,20 +90,17 @@ def run_batch(
 
 def run(
     nb_vertices: int,
-    game_length: int,
     batch_size: int,
     get_reward: Callable[[npt.NDArray, int], float],
     elite_ratio: float,
     super_ratio: float,
     learning_rate: float,
     hidden_layer_neurons: List[int],
-    output_file: str,
 ) -> None:
     """
     Runs the learning process
 
     :param nb_vertices: number of vertices in the graph
-    :param game_length: length of the game
     :param batch_size: number of new sessions per iteration
     :param elite_ratio: ratio of best instances we are learning from
     :param super_ratio: ratio of best instances that survive to the next iteration
@@ -145,19 +111,14 @@ def run(
     state_size = get_state_size(nb_vertices)
     nb_elites = int(batch_size * elite_ratio)
     nb_supers = int(batch_size * super_ratio)
-    if game_length is None:
-        game_length = nb_vertices * (nb_vertices - 1) // 2
-        random_order = False
-    else:
-        random_order = True
 
     best_reward: float = -INF
     start_time = time.time()
 
     model = make_model(nb_vertices, learning_rate, hidden_layer_neurons)
 
-    super_states = np.zeros((0, game_length, state_size), dtype=int)
-    super_actions = np.zeros((0, game_length), dtype=int)
+    super_states = np.zeros((0, graph_word_size, state_size), dtype=int)
+    super_actions = np.zeros((0, graph_word_size), dtype=int)
     super_rewards = np.zeros((0,), dtype=float)
     super_graphs = np.zeros((0, graph_word_size), dtype=int)
 
@@ -173,12 +134,10 @@ def run(
         tic = time.time()
         graphs, states, actions, rewards = run_batch(
             nb_vertices,
-            game_length,
             model,
             batch_size,
             best_graphs,
             get_reward,
-            random_order,
             action_randomness_epsilon,
         )
         states = np.append(states, super_states, axis=0)
@@ -190,47 +149,17 @@ def run(
         batch_best_reward_index = np.argmax(rewards)
         batch_best_reward = rewards[batch_best_reward_index]
         if batch_best_reward > best_reward:
+            # log progress to tensorboard
             best_reward = batch_best_reward
             best_graph = graphs[batch_best_reward_index]
-            if random_order:
-                with open(output_file, "a") as f:
-                    f.write("".join(str(x) for x in best_graph) + "\n")
-                    f.write(f"{best_reward} ({time.time() - start_time})\n\n")
-            else:
-                # try to improve the best graph
-                improved_best_graph, improved_best_reward = utils.improve_graph(
-                    best_graph, nb_vertices, get_reward
-                )
-                with open(output_file, "a") as f:
-                    f.write("".join(str(x) for x in improved_best_graph) + "\n")
-                    f.write(f"{improved_best_reward} ({time.time() - start_time})\n\n")
-                if improved_best_reward > best_reward:
-                    print(
-                        f"** Improved best reward : {best_reward} -> {improved_best_reward}**"
-                    )
-                    # insert the new best graph
-                    states = np.append(
-                        states,
-                        [
-                            fake_states(
-                                graphs[batch_best_reward_index],
-                                improved_best_graph,
-                                nb_vertices,
-                            )
-                        ],
-                        axis=0,
-                    )
-                    actions = np.append(
-                        actions,
-                        [improved_best_graph],
-                        axis=0,
-                    )
-                    rewards = np.append(rewards, [improved_best_reward])
-                    graphs = np.append(graphs, [improved_best_graph], axis=0)
-            plt.figure(num=1, figsize=(4,4), dpi=300)
-            nx.draw_kamada_kawai(utils.make_graph(best_graph, nb_vertices), node_size=80)
-            writer.add_figure('best graph', plt.figure(num=1), iteration)
-            writer.add_text('best matrix', repr(best_graph[:graph_word_size]), iteration)
+            plt.figure(num=1, figsize=(4, 4), dpi=300)
+            nx.draw_kamada_kawai(
+                utils.make_graph(best_graph, nb_vertices), node_size=80
+            )
+            writer.add_figure("best graph", plt.figure(num=1), iteration)
+            writer.add_text(
+                "best matrix", repr(best_graph[:graph_word_size]), iteration
+            )
             plt.close()
             writer.flush()
 
@@ -242,7 +171,6 @@ def run(
                 action_randomness_epsilon *= 1.2
                 steps_since_last_improvement = 0
                 action_randomness_epsilon = min(action_randomness_epsilon, .1)
-            
 
         # select elites (sessions to learn from)
         indexes = np.argpartition(rewards, (-nb_elites, -nb_supers))
@@ -265,19 +193,20 @@ def run(
         # evaluate mean reward
         mean_all_reward = np.mean(rewards)
 
-        print(f"{iteration}. Best individuals:")
-        print(np.sort(super_rewards)[::-1])
-        print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
-        print()
+        # print(f"{iteration}. Best individuals:")
+        # print(np.sort(super_rewards)[::-1])
+        # print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
+        # print()
         iteration += 1
-        writer.add_scalar("mean_reward", mean_all_reward, iteration)
-        writer.add_scalar("best_reward", best_reward, iteration)
+        writer.add_scalar("reward/best", best_reward, iteration)
+        writer.add_scalar("reward/mean", mean_all_reward, iteration)
         writer.add_scalar("action randomness", action_randomness_epsilon, iteration)
         writer.flush()
 
         # if iteration % 50 == 0:
         #     # save model every 50 iterations
         #     model.save("./model.keras")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -290,20 +219,6 @@ if __name__ == "__main__":
         "nb_vertices",
         type=int,
         help="number of vertices in the graph",
-    )
-    parser.add_argument(
-        "--game-length",
-        "-g",
-        type=int,
-        default=None,
-        help="length of a game (number of times a random edge can be changed)",
-    )
-    parser.add_argument(
-        "--output-file",
-        "-o",
-        type=str,
-        default="results.txt",
-        help="file to write results to",
     )
     parser.add_argument(
         "--learning-rate",
@@ -344,12 +259,10 @@ if __name__ == "__main__":
     get_reward = rewards.mapping[args.reward_function]
     run(
         nb_vertices=args.nb_vertices,
-        game_length=args.game_length,
         batch_size=args.batch_size,
         elite_ratio=args.elite_ratio,
         super_ratio=args.super_ratio,
         learning_rate=args.learning_rate,
         hidden_layer_neurons=args.hidden_layers,
-        output_file=args.output_file,
         get_reward=get_reward,
     )
