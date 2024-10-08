@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import tensorboardX
 import tensorflow as tf
-import tensorflow.python.keras as keras
+import tensorflow.keras as keras
 import matplotlib.pyplot as plt
 import networkx as nx
 
@@ -81,10 +81,14 @@ def run_batch(
     nb_vertices: int,
     model: keras.Model,
     batch_size: int,
-    best_graphs: npt.NDArray,
-    get_reward: Callable[[npt.NDArray, int], float],
+    reward_function: Callable[[npt.NDArray[np.int_], int], float],
     action_randomness_epsilon: float = 0,
-) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
+) -> Tuple[
+    npt.NDArray[np.int_],
+    npt.NDArray[np.int_],
+    npt.NDArray[np.int_],
+    npt.NDArray[np.float_],
+]:
     """
     Generates a batch of graphs and evaluates the reward on the generated
     graphs.
@@ -92,8 +96,7 @@ def run_batch(
     :param nb_vertices: number of vertices of each graph
     :param model: model used to generate the graphs
     :param batch_size: number of graphs to generate
-    :param best_graphs: best graphs to start from (from previous iterations)
-    :param get_reward: reward function to evaluate the generated graphs
+    :param reward_function: reward function to evaluate the generated graphs
     :param action_randomness_epsilon: parameter to force some randomness.
     Whether an edge is added on the graph or not is based on the probability
     given by the model, but this probability is clipped to be at least
@@ -104,10 +107,7 @@ def run_batch(
     graph_word_size = get_graph_word_size(nb_vertices)
     state_size = get_state_size(nb_vertices)
 
-    # initial batch is made of copies of the best graphs (filled to have
-    # batch_size elements)
-    graphs = np.repeat(best_graphs, batch_size // len(best_graphs), axis=0)
-    graphs = np.append(graphs, best_graphs[: batch_size % len(best_graphs)], axis=0)
+    graphs: npt.NDArray[np.int_] = np.zeros((batch_size, graph_word_size), dtype=int)
 
     # states is an array of shape (batch_size, graph_word_size, state_size):
     # - coord 0: index in the batch
@@ -115,14 +115,14 @@ def run_batch(
     # - value at (i, j): state of the i-th graph at step j (input of
     # the model represented as current edges followed by the description of
     # the active edge)
-    states = np.zeros((batch_size, graph_word_size, state_size), dtype=int)
+    states: npt.NDArray[np.int_] = np.zeros((batch_size, graph_word_size, state_size), dtype=int)
 
     # actions is an array of shape (batch_size, graph_word_size):
     # - coord 0: index in the batch
     # - coord 1: step of the generation process (one for each edge)
     # - value at (i, j): action taken  on the i-th graph at step j (1 if
     # an edge was added, 0 otherwise)
-    actions = np.zeros((batch_size, graph_word_size), dtype=int)
+    actions: npt.NDArray[np.int_] = np.zeros((batch_size, graph_word_size), dtype=int)
 
     step_i = 0  # index of the first vertex of the edge being considered
     step_j = 1  # index of the second vertex of the edge being considered
@@ -148,28 +148,27 @@ def run_batch(
             step_j = step_i + 1
 
     # after generating all the graphs, calculate the reward for each of them
-    rewards = np.apply_along_axis(get_reward, 1, graphs, nb_vertices)
-
+    rewards: npt.NDArray[np.float_] = np.apply_along_axis(reward_function, 1, graphs, nb_vertices)
     return graphs, states, actions, rewards
 
 
 def run(
     nb_vertices: int,
     batch_size: int,
-    get_reward: Callable[[npt.NDArray, int], float],
+    reward_function: Callable[[npt.NDArray[np.int_], int], float],
     elite_ratio: float,
     super_ratio: float,
     learning_rate: float,
     hidden_layer_neurons: List[int],
 ) -> None:
     """
-    Execute the main learning process.
+    Executes the main loop of the learning process.
 
-    :param nb_vertices: number of vertices in the graph
+    :param nb_vertices: number of vertices in the graphs
     :param batch_size: number of new graphs generated per batch
-    :param elite_ratio: ratio of best instances we are learning from
-    :param super_ratio: ratio of best instances that survive to the next
-    iteration
+    :param reward_function: reward function to evaluate the generated graphs
+    :param elite_ratio: ratio of best instances to learn from
+    :param super_ratio: ratio of best instances kept for the next iteration
     :param learning_rate: learning rate of the model. Increase this to make
     convergence faster, decrease if the algorithm gets stuck in local optima
     too often.
@@ -180,45 +179,47 @@ def run(
     state_size = get_state_size(nb_vertices)
     nb_elites = int(batch_size * elite_ratio)
     nb_supers = int(batch_size * super_ratio)
+    model = make_model(nb_vertices, learning_rate, hidden_layer_neurons)
 
     best_reward: float = MIN_REWARD
 
-    model = make_model(nb_vertices, learning_rate, hidden_layer_neurons)
+    # initially there are no super instances
+    super_states: npt.NDArray[np.int_] = np.zeros(
+        (0, graph_word_size, state_size), dtype=int
+    )
+    super_actions: npt.NDArray[np.int_] = np.zeros((0, graph_word_size), dtype=int)
+    super_rewards: npt.NDArray[np.float_] = np.zeros((0,), dtype=float)
+    super_graphs: npt.NDArray[np.int_] = np.zeros((0, graph_word_size), dtype=int)
 
-    super_states = np.zeros((0, graph_word_size, state_size), dtype=int)
-    super_actions = np.zeros((0, graph_word_size), dtype=int)
-    super_rewards = np.zeros((0,), dtype=float)
-    super_graphs = np.zeros((0, graph_word_size), dtype=int)
-
-    best_graphs = np.random.randint(2, size=(batch_size, graph_word_size))
     iteration = 0
-
     steps_since_last_improvement = 0
     action_randomness_epsilon = 0.01
 
     writer = tensorboardX.SummaryWriter()
     while True:
-        # generate new sessions
+        # generate a new batch of graphs
         graphs, states, actions, rewards = run_batch(
             nb_vertices,
             model,
             batch_size,
-            best_graphs,
-            get_reward,
+            reward_function,
             action_randomness_epsilon,
         )
-        states = np.append(states, super_states, axis=0)
-        actions = np.append(actions, super_actions, axis=0)
-        rewards = np.append(rewards, super_rewards)
-        graphs = np.append(graphs, super_graphs, axis=0)
+        # append super graphs to the new batch
+        states: npt.NDArray[np.int_] = np.append(states, super_states, axis=0)
+        actions: npt.NDArray[np.int_] = np.append(actions, super_actions, axis=0)
+        rewards: npt.NDArray[np.float_] = np.append(rewards, super_rewards)
+        graphs: npt.NDArray[np.int_] = np.append(graphs, super_graphs, axis=0)
+
+        # get indexes of elites, supers and the best graph by reward
+        indexes = np.argpartition(rewards, (-nb_elites, -nb_supers, -1))
 
         # Compare best reward of this batch to the overall best reward
-        batch_best_reward_index = np.argmax(rewards)
-        batch_best_reward = rewards[batch_best_reward_index]
+        batch_best_reward = rewards[indexes[-1]]
         if batch_best_reward > best_reward:
             # log progress to tensorboard
             best_reward = batch_best_reward
-            best_graph = graphs[batch_best_reward_index]
+            best_graph = graphs[indexes[-1]]
             plt.figure(num=1, figsize=(4, 4), dpi=300)
             nx.draw_kamada_kawai(
                 utils.make_graph(best_graph, nb_vertices), node_size=80
@@ -234,18 +235,26 @@ def run(
             action_randomness_epsilon = 0.01
         else:
             steps_since_last_improvement += 1
-            if steps_since_last_improvement > 10:
-                action_randomness_epsilon *= 1.2
-                steps_since_last_improvement = 0
+            if steps_since_last_improvement % 10 == 0:
+                action_randomness_epsilon *= 1.1
                 action_randomness_epsilon = min(action_randomness_epsilon, 0.1)
 
-        # select elites (sessions to learn from)
-        indexes = np.argpartition(rewards, (-nb_elites, -nb_supers))
-        elite_indexes = indexes[-nb_elites:]
-        elite_states = states[elite_indexes].reshape(-1, state_size)
-        elite_actions = actions[elite_indexes].reshape(-1)
+        # evaluate mean reward and log to tensorboard
+        iteration += 1
+        writer.add_scalar("reward/best", best_reward, iteration)
+        writer.add_scalar("reward/mean", np.mean(rewards), iteration)
+        writer.add_scalar("action randomness", action_randomness_epsilon, iteration)
+        writer.flush()
 
-        best_graphs = graphs[elite_indexes]
+        # select elites (sessions to learn from)
+        elite_indexes = indexes[-nb_elites:]
+        elite_states = states[elite_indexes]
+        elite_actions = actions[elite_indexes]
+        print(elite_states.shape)
+        print(elite_actions.shape)
+
+        model.fit(elite_states.reshape(-1, state_size), elite_actions.reshape(-1))
+        keras.backend.clear_session()  # to mitigate memory leak
 
         # select super sessions (sessions that will be kept for the next generation)
         super_indexes = indexes[-nb_supers:]
@@ -253,22 +262,6 @@ def run(
         super_actions = actions[super_indexes]
         super_rewards = rewards[super_indexes]
         super_graphs = graphs[super_indexes]
-
-        model.fit(elite_states, elite_actions)
-        keras.backend.clear_session()  # to mitigate memory leak
-
-        # evaluate mean reward
-        mean_all_reward = np.mean(rewards)
-
-        iteration += 1
-        writer.add_scalar("reward/best", best_reward, iteration)
-        writer.add_scalar("reward/mean", mean_all_reward, iteration)
-        writer.add_scalar("action randomness", action_randomness_epsilon, iteration)
-        writer.flush()
-
-        # if iteration % 50 == 0:
-        #     # save model every 50 iterations
-        #     model.save("./model.keras")
 
 
 if __name__ == "__main__":
@@ -327,5 +320,5 @@ if __name__ == "__main__":
         super_ratio=args.super_ratio,
         learning_rate=args.learning_rate,
         hidden_layer_neurons=args.hidden_layers,
-        get_reward=get_reward,
+        reward_function=get_reward,
     )
