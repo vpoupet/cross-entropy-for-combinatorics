@@ -6,20 +6,39 @@ import numpy as np
 import numpy.typing as npt
 import tensorboardX
 import tensorflow as tf
+import tensorflow.python.keras as keras
 import matplotlib.pyplot as plt
 import networkx as nx
 
 import rewards
 import utils
 
-INF = 1000
+MIN_REWARD: int = -1000
+"""Reward score for invalid graphs"""
 
 
 def get_graph_word_size(nb_vertices: int) -> int:
+    """
+    Returns the number of edges in a graph with a given number of vertices.
+
+    :param nb_vertices: number of vertices in the graph
+    :return: number of edges in the graph
+    """
     return nb_vertices * (nb_vertices - 1) // 2
 
 
 def get_state_size(nb_vertices: int) -> int:
+    """
+    Returns the number of bits required to describe the state.
+
+    The state is represented by n(n-1)/2 bits that describe the current
+    edges of the graph, followed by n bits that describe the current
+    edge being considered. Amongst these n bits exactly 2 are set to 1
+    (the vertices of the edge being considered).
+
+    :param nb_vertices: number of vertices in the graph
+    :return: number of bits required to describe the state
+    """
     return get_graph_word_size(nb_vertices) + nb_vertices
 
 
@@ -27,62 +46,108 @@ def make_model(
     nb_vertices: int,
     learning_rate: float,
     hidden_layer_neurons: List[int],
-) -> tf.keras.Model:
+) -> keras.Model:
+    """
+    Creates a model to generate graphs.
+    Input of the model is a state of the graph (current edges and
+    description of edge being considered).
+    Output is a probability of adding the edge being considered.
+
+    :param nb_vertices: number of vertices in the graph
+    :param learning_rate: learning rate of the model. Increase this to
+    make convergence faster, decrease if the algorithm gets stuck in
+    local optima too often.
+    :param hidden_layer_neurons: number of neurons in the model hidden
+    layers
+    :return: the newly created model
+    """
     state_size = get_state_size(nb_vertices)
 
-    model: tf.keras.Model = tf.keras.models.Sequential()
-    model.add(tf.keras.layers.InputLayer(input_shape=(state_size,)))
+    model: keras.Model = keras.models.Sequential()
+    model.add(keras.layers.InputLayer(shape=(state_size,)))
     for nb_neurons in hidden_layer_neurons:
-        model.add(tf.keras.layers.Dense(nb_neurons, activation="relu"))
-    model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
+        model.add(keras.layers.Dense(nb_neurons, activation="relu"))
+    model.add(keras.layers.Dense(1, activation="sigmoid"))
 
     # Adam optimizer also works well, with lower learning rate
     model.compile(
         loss="binary_crossentropy",
-        optimizer=tf.keras.optimizers.SGD(learning_rate=learning_rate),
+        optimizer=keras.optimizers.SGD(learning_rate=learning_rate),
     )
     return model
 
 
 def run_batch(
     nb_vertices: int,
-    model: tf.keras.Model,
+    model: keras.Model,
     batch_size: int,
     best_graphs: npt.NDArray,
     get_reward: Callable[[npt.NDArray, int], float],
     action_randomness_epsilon: float = 0,
 ) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
+    """
+    Generates a batch of graphs and evaluates the reward on the generated
+    graphs.
+
+    :param nb_vertices: number of vertices of each graph
+    :param model: model used to generate the graphs
+    :param batch_size: number of graphs to generate
+    :param best_graphs: best graphs to start from (from previous iterations)
+    :param get_reward: reward function to evaluate the generated graphs
+    :param action_randomness_epsilon: parameter to force some randomness.
+    Whether an edge is added on the graph or not is based on the probability
+    given by the model, but this probability is clipped to be at least
+    (action_randomness_epsilon) and at most (1 - action_randomness_epsilon).
+    :return: a tuple containing the generated graphs, states, actions and
+    rewards
+    """
     graph_word_size = get_graph_word_size(nb_vertices)
     state_size = get_state_size(nb_vertices)
 
+    # initial batch is made of copies of the best graphs (filled to have
+    # batch_size elements)
     graphs = np.repeat(best_graphs, batch_size // len(best_graphs), axis=0)
     graphs = np.append(graphs, best_graphs[: batch_size % len(best_graphs)], axis=0)
 
+    # states is an array of shape (batch_size, graph_word_size, state_size):
+    # - coord 0: index in the batch
+    # - coord 1: step of the generation process (one for each edge)
+    # - value at (i, j): state of the i-th graph at step j (input of
+    # the model represented as current edges followed by the description of
+    # the active edge)
     states = np.zeros((batch_size, graph_word_size, state_size), dtype=int)
+
+    # actions is an array of shape (batch_size, graph_word_size):
+    # - coord 0: index in the batch
+    # - coord 1: step of the generation process (one for each edge)
+    # - value at (i, j): action taken  on the i-th graph at step j (1 if
+    # an edge was added, 0 otherwise)
     actions = np.zeros((batch_size, graph_word_size), dtype=int)
 
-    step_i = 0
-    step_j = 1
-    step_k = 0
+    step_i = 0  # index of the first vertex of the edge being considered
+    step_j = 1  # index of the second vertex of the edge being considered
     for step in range(graph_word_size):
+        # for each possible edge of the graph, query the model to decide
+        # whether to add it or not (on each of the batch_size graphs)
         states[:, step, :graph_word_size] = graphs
         states[:, step, graph_word_size + step_i] = 1
         states[:, step, graph_word_size + step_j] = 1
 
-        prob = model(states[:, step, :]).numpy()
+        prob = model(states[:, step, :]).numpy()  # model prediction
         prob = np.clip(prob, action_randomness_epsilon, 1 - action_randomness_epsilon)
 
+        # choose action based on the model probability given by the model
         step_actions = (np.random.random(size=(batch_size,)) < prob[:, 0]).astype(int)
         actions[:, step] = step_actions
         # update graphs
-        graphs[:, step_k] = step_actions
+        graphs[:, step] = step_actions
 
         step_j += 1
         if step_j == nb_vertices:
             step_i += 1
             step_j = step_i + 1
-        step_k += 1
 
+    # after generating all the graphs, calculate the reward for each of them
     rewards = np.apply_along_axis(get_reward, 1, graphs, nb_vertices)
 
     return graphs, states, actions, rewards
@@ -98,22 +163,25 @@ def run(
     hidden_layer_neurons: List[int],
 ) -> None:
     """
-    Runs the learning process
+    Execute the main learning process.
 
     :param nb_vertices: number of vertices in the graph
-    :param batch_size: number of new sessions per iteration
+    :param batch_size: number of new graphs generated per batch
     :param elite_ratio: ratio of best instances we are learning from
-    :param super_ratio: ratio of best instances that survive to the next iteration
-    :param learning_rate: learning rate of the model. Increase this to make convergence faster, decrease if the algorithm gets stuck in local optima too often.
-    :param hidden_layer_neurons: number of neurons in the model hidden layers
+    :param super_ratio: ratio of best instances that survive to the next
+    iteration
+    :param learning_rate: learning rate of the model. Increase this to make
+    convergence faster, decrease if the algorithm gets stuck in local optima
+    too often.
+    :param hidden_layer_neurons: number of neurons in each hidden layer of
+    the model
     """
     graph_word_size = get_graph_word_size(nb_vertices)
     state_size = get_state_size(nb_vertices)
     nb_elites = int(batch_size * elite_ratio)
     nb_supers = int(batch_size * super_ratio)
 
-    best_reward: float = -INF
-    start_time = time.time()
+    best_reward: float = MIN_REWARD
 
     model = make_model(nb_vertices, learning_rate, hidden_layer_neurons)
 
@@ -126,12 +194,11 @@ def run(
     iteration = 0
 
     steps_since_last_improvement = 0
-    action_randomness_epsilon = .01
+    action_randomness_epsilon = 0.01
 
     writer = tensorboardX.SummaryWriter()
     while True:
         # generate new sessions
-        tic = time.time()
         graphs, states, actions, rewards = run_batch(
             nb_vertices,
             model,
@@ -164,13 +231,13 @@ def run(
             writer.flush()
 
             steps_since_last_improvement = 0
-            action_randomness_epsilon = .01
+            action_randomness_epsilon = 0.01
         else:
             steps_since_last_improvement += 1
             if steps_since_last_improvement > 10:
                 action_randomness_epsilon *= 1.2
                 steps_since_last_improvement = 0
-                action_randomness_epsilon = min(action_randomness_epsilon, .1)
+                action_randomness_epsilon = min(action_randomness_epsilon, 0.1)
 
         # select elites (sessions to learn from)
         indexes = np.argpartition(rewards, (-nb_elites, -nb_supers))
@@ -188,15 +255,11 @@ def run(
         super_graphs = graphs[super_indexes]
 
         model.fit(elite_states, elite_actions)
-        tf.keras.backend.clear_session()  # to mitigate memory leak
+        keras.backend.clear_session()  # to mitigate memory leak
 
         # evaluate mean reward
         mean_all_reward = np.mean(rewards)
 
-        # print(f"{iteration}. Best individuals:")
-        # print(np.sort(super_rewards)[::-1])
-        # print(f"Mean reward: {mean_all_reward}, time: {time.time() - tic}")
-        # print()
         iteration += 1
         writer.add_scalar("reward/best", best_reward, iteration)
         writer.add_scalar("reward/mean", mean_all_reward, iteration)
@@ -231,7 +294,7 @@ if __name__ == "__main__":
         "--batch-size",
         "-b",
         type=int,
-        default=2000,
+        default=1000,
         help="number of new sessions per iteration",
     )
     parser.add_argument(
@@ -250,7 +313,7 @@ if __name__ == "__main__":
         "--hidden-layers",
         type=int,
         nargs="+",
-        default=[128, 32],
+        default=[64, 32],
         help="number of neurons in the model hidden layers",
     )
 
