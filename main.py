@@ -81,12 +81,12 @@ def run_batch(
     nb_vertices: int,
     model: keras.Model,
     batch_size: int,
-    reward_function: Callable[[npt.NDArray[np.int_], int], float],
+    reward_function: Callable[[npt.NDArray[np.bool_], int], float],
     action_randomness_epsilon: float = 0,
 ) -> Tuple[
-    npt.NDArray[np.int_],
-    npt.NDArray[np.int_],
-    npt.NDArray[np.int_],
+    npt.NDArray[np.bool_],
+    npt.NDArray[np.bool_],
+    npt.NDArray[np.bool_],
     npt.NDArray[np.float_],
 ]:
     """
@@ -107,7 +107,7 @@ def run_batch(
     graph_word_size = get_graph_word_size(nb_vertices)
     state_size = get_state_size(nb_vertices)
 
-    graphs: npt.NDArray[np.int_] = np.zeros((batch_size, graph_word_size), dtype=int)
+    graphs: npt.NDArray[np.bool_] = np.zeros((batch_size, graph_word_size), dtype=bool)
 
     # states is an array of shape (batch_size, graph_word_size, state_size):
     # - coord 0: index in the batch
@@ -115,14 +115,14 @@ def run_batch(
     # - value at (i, j): state of the i-th graph at step j (input of
     # the model represented as current edges followed by the description of
     # the active edge)
-    states: npt.NDArray[np.int_] = np.zeros((batch_size, graph_word_size, state_size), dtype=int)
+    states: npt.NDArray[np.bool_] = np.zeros((batch_size, graph_word_size, state_size), dtype=bool)
 
     # actions is an array of shape (batch_size, graph_word_size):
     # - coord 0: index in the batch
     # - coord 1: step of the generation process (one for each edge)
     # - value at (i, j): action taken  on the i-th graph at step j (1 if
     # an edge was added, 0 otherwise)
-    actions: npt.NDArray[np.int_] = np.zeros((batch_size, graph_word_size), dtype=int)
+    actions: npt.NDArray[np.bool_] = np.zeros((batch_size, graph_word_size), dtype=bool)
 
     step_i = 0  # index of the first vertex of the edge being considered
     step_j = 1  # index of the second vertex of the edge being considered
@@ -137,7 +137,7 @@ def run_batch(
         prob = np.clip(prob, action_randomness_epsilon, 1 - action_randomness_epsilon)
 
         # choose action based on the model probability given by the model
-        step_actions = (np.random.random(size=(batch_size,)) < prob[:, 0]).astype(int)
+        step_actions = (np.random.random(size=(batch_size,)) < prob[:, 0])
         actions[:, step] = step_actions
         # update graphs
         graphs[:, step] = step_actions
@@ -155,7 +155,7 @@ def run_batch(
 def run(
     nb_vertices: int,
     batch_size: int,
-    reward_function: Callable[[npt.NDArray[np.int_], int], float],
+    reward_function: Callable[[npt.NDArray[np.bool_], int], float],
     elite_ratio: float,
     super_ratio: float,
     learning_rate: float,
@@ -184,12 +184,12 @@ def run(
     best_reward: float = MIN_REWARD
 
     # initially there are no super instances
-    super_states: npt.NDArray[np.int_] = np.zeros(
-        (0, graph_word_size, state_size), dtype=int
+    super_states: npt.NDArray[np.bool_] = np.zeros(
+        (0, graph_word_size, state_size), dtype=bool
     )
-    super_actions: npt.NDArray[np.int_] = np.zeros((0, graph_word_size), dtype=int)
+    super_actions: npt.NDArray[np.bool_] = np.zeros((0, graph_word_size), dtype=bool)
     super_rewards: npt.NDArray[np.float_] = np.zeros((0,), dtype=float)
-    super_graphs: npt.NDArray[np.int_] = np.zeros((0, graph_word_size), dtype=int)
+    super_graphs: npt.NDArray[np.bool_] = np.zeros((0, graph_word_size), dtype=bool)
 
     iteration = 0
     steps_since_last_improvement = 0
@@ -206,10 +206,10 @@ def run(
             action_randomness_epsilon,
         )
         # append super graphs to the new batch
-        states: npt.NDArray[np.int_] = np.append(states, super_states, axis=0)
-        actions: npt.NDArray[np.int_] = np.append(actions, super_actions, axis=0)
+        states: npt.NDArray[np.bool_] = np.append(states, super_states, axis=0)
+        actions: npt.NDArray[np.bool_] = np.append(actions, super_actions, axis=0)
         rewards: npt.NDArray[np.float_] = np.append(rewards, super_rewards)
-        graphs: npt.NDArray[np.int_] = np.append(graphs, super_graphs, axis=0)
+        graphs: npt.NDArray[np.bool_] = np.append(graphs, super_graphs, axis=0)
 
         # get indexes of elites, supers and the best graph by reward
         indexes = np.argpartition(rewards, (-nb_elites, -nb_supers, -1))
@@ -250,8 +250,6 @@ def run(
         elite_indexes = indexes[-nb_elites:]
         elite_states = states[elite_indexes]
         elite_actions = actions[elite_indexes]
-        print(elite_states.shape)
-        print(elite_actions.shape)
 
         model.fit(elite_states.reshape(-1, state_size), elite_actions.reshape(-1))
         keras.backend.clear_session()  # to mitigate memory leak
