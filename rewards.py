@@ -10,6 +10,16 @@ INF = 1000
 
 FOURTH_EIGENVALUE_RATIO = (1 + np.sqrt(5)) / 12
 
+
+def get_reward_size_median_eigenvalue(state: np.ndarray, n: int) -> float:
+    g = utils.make_matrix(state, n)
+    degrees = np.sum(g, axis=0)
+    if np.any(degrees > 3):
+        return -INF
+    eigen_values = np.linalg.eigvalsh(g)
+    return max(abs(eigen_values[n // 2]), abs(eigen_values[(n - 1) // 2]))
+
+
 def get_reward_square_eigenvalues(state: np.ndarray, n: int) -> float:
     g = utils.make_graph(state, n)
     if nx.number_connected_components(g) > 1:
@@ -38,7 +48,7 @@ def get_reward_ashraf_distance(state: np.ndarray, n: int) -> float:
     t = 3
     g = utils.make_graph(state, n)
     if not nx.is_connected(g):
-        return -1000;
+        return -1000
     l = utils.signless_laplacian(nx.floyd_warshall_numpy(g))
     eigen_values = np.linalg.eigvalsh(l)
     return sum(eigen_values[-t:]) - np.trace(l) / 2 - (2 * t - 3) * t * (t + 1) / 2
@@ -87,7 +97,7 @@ def get_reward_conj21(state: np.ndarray, n: int) -> float:
 
 
 def get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy(
-        state: np.ndarray, n: int
+    state: np.ndarray, n: int
 ) -> float:
     g = utils.make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
@@ -111,14 +121,14 @@ def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
     g = utils.make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
     # return eigen_values[-4] - 0.269*n
-    return (1+eigen_values[-4])/n - FOURTH_EIGENVALUE_RATIO
+    return (1 + eigen_values[-4]) / n - FOURTH_EIGENVALUE_RATIO
 
 
 def get_reward_eighth_eigenvalue(state: np.ndarray, n: int) -> float:
     # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
     g = utils.make_matrix(state, n)
     eigen_values = np.linalg.eigvalsh(g)
-    return (1+eigen_values[-8])/n - 5/28.
+    return (1 + eigen_values[-8]) / n - 5 / 28.0
 
 
 def get_reward_kth_eigenvalue(state: np.ndarray, n: int, k: int) -> float:
@@ -164,9 +174,9 @@ def get_reward_bollobas_nikiforov(state: np.ndarray, n: int) -> float:
     eigen_values = np.linalg.eigvalsh(m)
     clique_number = utils.clique_number(g)
     return (
-            -2.0 * np.sum(state) * (clique_number - 1) / clique_number
-            + eigen_values[-1] * eigen_values[-1]
-            + eigen_values[-2] * eigen_values[-2]
+        -2.0 * np.sum(state) * (clique_number - 1) / clique_number
+        + eigen_values[-1] * eigen_values[-1]
+        + eigen_values[-2] * eigen_values[-2]
     )
 
 
@@ -238,7 +248,10 @@ def get_reward_randic_mean_distance(state: np.ndarray, n: int) -> float:
         return -INF
     randic_index = utils.randic_index(g)
     mean_distance = nx.average_shortest_path_length(g)
-    if mean_distance - randic_index + math.sqrt(n-1)-2*(1-1/n) > utils.EPSILON:
+    if (
+        mean_distance - randic_index + math.sqrt(n - 1) - 2 * (1 - 1 / n)
+        > utils.EPSILON
+    ):
         print("bingo randic and mean distance !")
         print(state)
         print(utils.make_graph(state, n))
@@ -268,9 +281,9 @@ def get_reward_difference_szeged_wiener(state: np.ndarray, n: int) -> float:
                 n1 += 1
         szeged_index += n0 * n1
     if (
-            wiener_index == INF
-            or -szeged_index + wiener_index == 0
-            or -szeged_index + wiener_index + 2 * n == 6
+        wiener_index == INF
+        or -szeged_index + wiener_index == 0
+        or -szeged_index + wiener_index + 2 * n == 6
     ):
         return -INF
     if -szeged_index + wiener_index + 2 * n > utils.EPSILON:
@@ -319,9 +332,9 @@ def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
         if d < minDegree:
             minDegree = d
     if (
-            minDegree == n - 1
-            or n >= minDegree + maxDegree
-            or 2 * sum(state) + n * (n - 1) >= (minDegree + maxDegree) ^ 2
+        minDegree == n - 1
+        or n >= minDegree + maxDegree
+        or 2 * sum(state) + n * (n - 1) >= (minDegree + maxDegree) ^ 2
     ):
         return -1000
 
@@ -334,6 +347,7 @@ def get_reward_akbari_hosseinzadeh(state: np.ndarray, n: int) -> float:
         print(m)
     return minDegree + maxDegree - somme
 
+
 # This is not discrete, so not a good reward function
 def get_reward_planar_girth_independent_set(state: np.ndarray, n: int) -> float:
     g = utils.make_graph(state, n)
@@ -342,14 +356,15 @@ def get_reward_planar_girth_independent_set(state: np.ndarray, n: int) -> float:
     if not nx.is_connected(g) or nx.girth(g) < 7 and not nx.is_planar(g):
         return -INF
     return n / nx.maximal_independent_set(g)
-    
+
+
 def get_fractional_domination(state: np.ndarray, n: int) -> float:
     g = utils.make_graph(state, n)
-    
+
     if nx.diameter(g) > 3 or not nx.is_planar(g):
         return -INF
     return nx.fractional_dominating_set()
-    
+
 
 def get_max_vertices_degree_diameter(state: np.ndarray, n: int) -> float:
     g = utils.make_graph(state, n)
@@ -357,10 +372,11 @@ def get_max_vertices_degree_diameter(state: np.ndarray, n: int) -> float:
     for i, d in g.degree():
         if d > maxDegree:
             maxDegree = d
-    
+
     if (not nx.is_connected(g)) or nx.diameter(g) > 3 or not nx.is_planar(g):
         return -INF
-    return n / (1. * maxDegree)
+    return n / (1.0 * maxDegree)
+
 
 mapping = {
     "square": get_reward_square_eigenvalues,
@@ -384,5 +400,6 @@ mapping = {
     "wiener_line": get_reward_wiener_line_graph,
     "wiener_line_over_wiener": get_reward_wiener_line_graph_over_winer,
     "planar_girth_independent_set": get_reward_planar_girth_independent_set,
-    "planar_degre_diameter_3": get_max_vertices_degree_diameter
+    "planar_degre_diameter_3": get_max_vertices_degree_diameter,
+    "median_eigenvalue": get_reward_size_median_eigenvalue,
 }
