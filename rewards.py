@@ -342,6 +342,25 @@ def get_reward_planar_girth_independent_set(state: np.ndarray, n: int) -> float:
     if not nx.is_connected(g) or nx.girth(g) < 7 and not nx.is_planar(g):
         return -INF
     return n / nx.maximal_independent_set(g)
+    
+def get_fractional_domination(state: np.ndarray, n: int) -> float:
+    g = utils.make_graph(state, n)
+    
+    if nx.diameter(g) > 3 or not nx.is_planar(g):
+        return -INF
+    return nx.fractional_dominating_set()
+    
+
+def get_max_vertices_degree_diameter(state: np.ndarray, n: int) -> float:
+    g = utils.make_graph(state, n)
+    maxDegree = 0
+    for i, d in g.degree():
+        if d > maxDegree:
+            maxDegree = d
+    
+    if (not nx.is_connected(g)) or nx.diameter(g) > 3 or not nx.is_planar(g):
+        return -INF
+    return n / (1. * maxDegree)
 
 mapping = {
     "square": get_reward_square_eigenvalues,
@@ -365,4 +384,5 @@ mapping = {
     "wiener_line": get_reward_wiener_line_graph,
     "wiener_line_over_wiener": get_reward_wiener_line_graph_over_winer,
     "planar_girth_independent_set": get_reward_planar_girth_independent_set,
+    "planar_degre_diameter_3": get_max_vertices_degree_diameter
 }
