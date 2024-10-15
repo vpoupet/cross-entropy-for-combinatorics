@@ -1,5 +1,4 @@
 import argparse
-import time
 from typing import Callable, List, Tuple
 
 import numpy as np
@@ -15,32 +14,6 @@ import utils
 
 MIN_REWARD: int = -1000
 """Reward score for invalid graphs"""
-
-
-def get_graph_word_size(nb_vertices: int) -> int:
-    """
-    Returns the number of edges in a graph with a given number of vertices.
-
-    :param nb_vertices: number of vertices in the graph
-    :return: number of edges in the graph
-    """
-    return nb_vertices * (nb_vertices - 1) // 2
-
-
-def get_state_size(nb_vertices: int) -> int:
-    """
-    Returns the number of bits required to describe the state.
-
-    The state is represented by n(n-1)/2 bits that describe the current
-    edges of the graph, followed by n bits that describe the current
-    edge being considered. Amongst these n bits exactly 2 are set to 1
-    (the vertices of the edge being considered).
-
-    :param nb_vertices: number of vertices in the graph
-    :return: number of bits required to describe the state
-    """
-    return get_graph_word_size(nb_vertices) + nb_vertices
-
 
 def make_model(
     nb_vertices: int,
@@ -61,7 +34,7 @@ def make_model(
     layers
     :return: the newly created model
     """
-    state_size = get_state_size(nb_vertices)
+    state_size = utils.get_state_size(nb_vertices)
 
     model: keras.Model = keras.models.Sequential()
     model.add(keras.layers.InputLayer(shape=(state_size,)))
@@ -104,8 +77,8 @@ def run_batch(
     :return: a tuple containing the generated graphs, states, actions and
     rewards
     """
-    graph_word_size = get_graph_word_size(nb_vertices)
-    state_size = get_state_size(nb_vertices)
+    graph_word_size = utils.get_graph_word_size(nb_vertices)
+    state_size = utils.get_state_size(nb_vertices)
 
     graphs: npt.NDArray[np.bool_] = np.zeros((batch_size, graph_word_size), dtype=bool)
 
@@ -175,8 +148,8 @@ def run(
     :param hidden_layer_neurons: number of neurons in each hidden layer of
     the model
     """
-    graph_word_size = get_graph_word_size(nb_vertices)
-    state_size = get_state_size(nb_vertices)
+    graph_word_size = utils.get_graph_word_size(nb_vertices)
+    state_size = utils.get_state_size(nb_vertices)
     nb_elites = int(batch_size * elite_ratio)
     nb_supers = int(batch_size * super_ratio)
     model = make_model(nb_vertices, learning_rate, hidden_layer_neurons)

@@ -16,6 +16,31 @@ def k(i, j, n):
     return n * i - (i * (i + 1)) // 2 + j - i - 1
 
 
+def get_graph_word_size(nb_vertices: int) -> int:
+    """
+    Returns the number of edges in a graph with a given number of vertices.
+
+    :param nb_vertices: number of vertices in the graph
+    :return: number of edges in the graph
+    """
+    return nb_vertices * (nb_vertices - 1) // 2
+
+
+def get_state_size(nb_vertices: int) -> int:
+    """
+    Returns the number of bits required to describe the state.
+
+    The state is represented by n(n-1)/2 bits that describe the current
+    edges of the graph, followed by n bits that describe the current
+    edge being considered. Amongst these n bits exactly 2 are set to 1
+    (the vertices of the edge being considered).
+
+    :param nb_vertices: number of vertices in the graph
+    :return: number of bits required to describe the state
+    """
+    return get_graph_word_size(nb_vertices) + nb_vertices
+
+
 def laplacian(m: np.ndarray[int]) -> np.ndarray[int]:
     """Returns the laplacian of a graph given by its adjacency matrix.
 
@@ -108,9 +133,9 @@ def improve_graph(state, n, reward_function):
         state[i] = 1 - state[i]
         reward = reward_function(state, n)
         if reward > best_reward:
-                best_reward = reward
-                best_state = state.copy()
-                did_improve = True
+            best_reward = reward
+            best_state = state.copy()
+            did_improve = True
         state[i] = 1 - state[i]
     if did_improve:
         return improve_graph(best_state, n, reward_function)
@@ -160,4 +185,6 @@ def randic_index(G):
     (2013) 351-361. http://dx.doi.org/10.5562/cca2294
     """
     _degree = functools.partial(nx.degree, G)
-    return _topological_index(G, func=lambda x, y: 1 / math.sqrt(_degree(x) * _degree(y)))
+    return _topological_index(
+        G, func=lambda x, y: 1 / math.sqrt(_degree(x) * _degree(y))
+    )
