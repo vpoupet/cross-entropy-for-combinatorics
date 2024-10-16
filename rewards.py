@@ -6,7 +6,7 @@ import numpy as np
 
 import utils
 
-INF = 1000
+INF: float = 1000.0
 
 FOURTH_EIGENVALUE_RATIO = (1 + np.sqrt(5)) / 12
 
@@ -122,6 +122,18 @@ def get_reward_fourth_eigenvalue(state: np.ndarray, n: int) -> float:
     eigen_values = np.linalg.eigvalsh(g)
     # return eigen_values[-4] - 0.269*n
     return (1 + eigen_values[-4]) / n - FOURTH_EIGENVALUE_RATIO
+
+
+def get_reward_sixth_eigenvalue(state: np.ndarray, n: int) -> float:
+    # see this : https://arxiv.org/pdf/2304.12324.pdf and https://arxiv.org/pdf/1502.00359.pdf
+
+    g = utils.make_matrix(state, n)
+    degrees = np.sum(g, axis=0)
+    if np.any(degrees <= 2):
+        return -INF
+    eigen_values = np.linalg.eigvalsh(g)
+
+    return (1 + eigen_values[-6]) / n - 1 / 5
 
 
 def get_reward_eighth_eigenvalue(state: np.ndarray, n: int) -> float:
@@ -387,6 +399,7 @@ mapping = {
     "aouchiche": get_reward_special_case_conjecture_Aouchiche_Hansen_graph_energy,
     "third_ev": get_reward_third_eigenvalue,
     "fourth_ev": get_reward_fourth_eigenvalue,
+    "sixth_ev": get_reward_sixth_eigenvalue,
     "eighth_ev": get_reward_eighth_eigenvalue,
     "kth_eigenvalue": get_reward_kth_eigenvalue,
     "bollobas": get_reward_bollobas_nikiforov,
